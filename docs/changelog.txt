@@ -19,6 +19,30 @@ WHAM-HBRIDGE-PFMG474 Firmware Changelog
         images to build/ (as in WHAM-XREX-PFMG474) with a fallback for older commits.
         Historical entries below predate the rename and are kept verbatim.
 
+2026-09-29  —  Phase 3: operating-state machine and fault handling (v0.8)
+-----------------------------------------------------------------------
+  Change:  New src/app/control/state_machine.{h,c} (mirrors WHAM-XREX-PFMG474's API
+        and names), src/app/task_faults.c (TaskFaults_Poll, first in App_Poll), and
+        cmd_state.c's ARM / DISARM / STATE? / GENERAL:TEST:FAULT. IDLE -> ARM -> ARMED
+        -> FIRE -> FIRING -> table ends -> IDLE; every shot needs its own ARM.
+        ONE fault type (SM_FAULT_GENERAL, per direct instruction): PC10/HRTIM1_FLT6,
+        any GateDriverStatus input, or GENERAL:TEST:FAULT -> FAULT from any state,
+        immediate PFM_ForceStop() (no ramp). FAULT:CLEAR goes through SM_ClearFault(),
+        which clears both sources (each re-checks its input) and returns to IDLE only
+        if both are healthy. Shot completion and fault latching are both found by
+        SM_PollFaults() in the main loop with interrupts masked, so no ISR calls into
+        the state machine; the hardware/EXTI paths still make the output safe first.
+        Behavior changes on the wire: FIRE needs ARMED (ERR 13), TABLE:BEGIN/STEP
+        refused while FIRING (ERR 13), BOOT refused while ARMED/FIRING (ERR 13),
+        FWUPdate:* needs STATE IDLE (was "output stopped"), FAULT? also reports 1 in
+        the FAULT state, the !BOOT banner's STATE= is the real state (FAULT if a fault
+        was present at boot). Not ported: PF13/PF15 external enable/trigger (skipped
+        per instruction), DEBUG:FAULT:BYPASS, ramp-downs, per-channel fault types,
+        telemetry events. New host test tests/test_state_machine.c (146 checks: normal
+        shot, disarm, empty table, fault from every source in every state, clear
+        refused while the input is still bad, ARM/FIRE refused with a latched source,
+        fault beats shot completion, no nested critical sections). SOP Rev D.
+
 2026-09-29  —  Phase 2: in-application firmware update, boot diagnostics, !BOOT banner
 -----------------------------------------------------------------------
   Change:  Ported from WHAM-XREX-PFMG474 (see AGENTS.md "Current functionality" and
