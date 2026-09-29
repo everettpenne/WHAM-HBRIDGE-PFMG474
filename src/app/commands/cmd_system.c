@@ -10,6 +10,7 @@
 #include "qspi_test.h"
 #include "git_version.h"
 #include "mcu.h"
+#include "state_machine.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,10 +45,14 @@ void cmd_boot(uart_instance_t *inst, char *args)
 {
     (void)args;
 
-    /* No state-machine/Firing concept exists in this minimal firmware
-       yet -- when one is added, gate this the same way the sibling
-       PFM-STM32G474 project's cmd_boot() does (reject with ERR while
-       Firing; resetting under load would drop outputs uncontrolled). */
+    /* Refused while ARMED or FIRING (ERR 13): resetting into the ROM
+       bootloader under load would drop the outputs uncontrolled. Allowed in
+       IDLE and FAULT (a faulted board may need new firmware). */
+    if ((SM_GetState() == SM_STATE_ARMED) || (SM_GetState() == SM_STATE_FIRING))
+    {
+        SendErr(inst, ERR_INVALID_STATE, "BOOT refused while ARMED or FIRING -- DISARM first");
+        return;
+    }
 
     /* uart_send() is blocking (HAL_UART_Transmit with HAL_MAX_DELAY), so
        this ACK is guaranteed to be fully on the wire before

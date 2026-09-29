@@ -8,6 +8,7 @@
 #include "ctrlr_config.h"
 #include "pfm.h"
 #include "hrtim.h"
+#include "state_machine.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,10 +33,26 @@
  * -------------------------------------------------------------------------- */
 static uint8_t g_tableUploadActive = 0U;
 
+/* The table is read by the playback interrupt while FIRING, so it cannot be
+   replaced mid-shot (ERR 13); upload between shots. */
+static uint8_t RefuseWhileFiring(uart_instance_t *inst)
+{
+    if (SM_GetState() == SM_STATE_FIRING)
+    {
+        SendErr(inst, ERR_INVALID_STATE, "Table can't change while FIRING");
+        return 1U;
+    }
+    return 0U;
+}
+
 void cmd_table_begin(uart_instance_t *inst, char *args)
 {
     (void)args;
 
+    if (RefuseWhileFiring(inst) != 0U)
+    {
+        return;
+    }
     PFM_TableReset();
     g_tableUploadActive = 1U;
 
@@ -85,6 +102,10 @@ void cmd_table_step(uart_instance_t *inst, char *args)
     if (g_tableUploadActive == 0U)
     {
         SendErr(inst, ERR_TABLE_NOT_UPLOADING, "Not currently uploading -- send TABLE:BEGIN first");
+        return;
+    }
+    if (RefuseWhileFiring(inst) != 0U)
+    {
         return;
     }
 
@@ -170,29 +191,19 @@ void cmd_table_query(uart_instance_t *inst, char *args)
 /* --------------------------------------------------------------------------
  * FIRE
  *
- * Begins PWM output by (re)starting playback of whatever table is
- * currently uploaded, from step 0. No ARM/state-machine interlock
- * exists in this minimal firmware -- FIRE always takes effect
- * immediately, whether the controller was idle or already mid-shot
- * (PFM_Restart() is safe to call in either case: it always resets to
- * step 0 and re-applies HRTIM1_PWM_Start()). If a fuller state machine
- * (ARM/interlock, matching the sibling PFM-STM32G474 project's
- * SM_Fire()) is ever needed here, this is the call site to extend, not
- * replace. Fault gating (below) is the first, narrow piece of that --
- * not a full state machine.
+ * Starts table playback from step 0 through the state machine
+ * (state_machine.h): the controller must be ARMED (ARM first), and each
+ * shot needs a fresh ARM -- the state returns to IDLE when the table ends.
+ * Gated 2026-09-29 (Phase 3); before that FIRE took effect immediately in
+ * any state.
  *
- * Two guards, checked in this order (both cheap, order doesn't
- * otherwise matter): a latched hardware fault (PC10/HRTIM1_FLT6, see
- * hrtim.h) is checked first -- the outputs are already safe in
- * hardware regardless, but firing straight into a still-tripped fault
- * would be a confusing "OK" that then produces no output, with no
- * indication why; then firing an empty table. PFM_CycleBoundaryHandler()
- * (the ISR-driven playback advance, see stm32g4xx_it.c's
- * HRTIM1_Master_IRQHandler()) already defends against g_pfmEntryCount
- * == 0 by stopping outputs again at the very first master-repetition
- * interrupt -- but that would happen silently, after a near-instant
- * blip on the outputs, with no error ever reported to the operator.
- * Rejecting both here instead gives a clear reason up front.
+ * Checked in this order, each with its own error: a latched fault (ERR 6
+ * -- PC10/HRTIM1_FLT6 or GateDriverStatus; the outputs are already safe in
+ * hardware, but firing into a still-tripped fault would be a confusing
+ * "OK" that produces no output), not ARMED (ERR 13), and an empty table
+ * (ERR 5 -- PFM_CycleBoundaryHandler() would otherwise stop the outputs
+ * again at the first interrupt, silently, after a near-instant blip).
+ * SM_Fire() re-checks all three as a last line of defense.
  * -------------------------------------------------------------------------- */
 
 void cmd_fire(uart_instance_t *inst, char *args)
@@ -205,13 +216,23 @@ void cmd_fire(uart_instance_t *inst, char *args)
         return;
     }
 
+    if (SM_GetState() != SM_STATE_ARMED)
+    {
+        SendErr(inst, ERR_INVALID_STATE, "Not ARMED -- send ARM first");
+        return;
+    }
+
     if (PFM_GetEntryCount() == 0U)
     {
         SendErr(inst, ERR_TABLE_EMPTY, "Table is empty -- upload one first (TABLE:BEGIN/STEP/END)");
         return;
     }
 
-    PFM_Restart();
+    if (SM_Fire() == 0U)
+    {
+        SendErr(inst, ERR_INVALID_STATE, "FIRE refused -- state changed");   /* narrow race only */
+        return;
+    }
 
     uart_send(inst, "OK\r\n");
 }

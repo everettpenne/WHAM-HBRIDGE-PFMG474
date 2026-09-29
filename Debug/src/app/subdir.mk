@@ -6,14 +6,17 @@
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
 ../src/app/app.c \
+../src/app/task_faults.c \
 ../src/app/task_scpi.c
 
 OBJS += \
 ./src/app/app.o \
+./src/app/task_faults.o \
 ./src/app/task_scpi.o
 
 C_DEPS += \
 ./src/app/app.d \
+./src/app/task_faults.d \
 ./src/app/task_scpi.d
 
 
@@ -24,7 +27,7 @@ src/app/%.o src/app/%.su src/app/%.cyclo: ../src/app/%.c src/app/subdir.mk
 clean: clean-src-2f-app
 
 clean-src-2f-app:
-	-$(RM) ./src/app/app.cyclo ./src/app/app.d ./src/app/app.o ./src/app/app.su ./src/app/task_scpi.cyclo ./src/app/task_scpi.d ./src/app/task_scpi.o ./src/app/task_scpi.su
+	-$(RM) ./src/app/app.cyclo ./src/app/app.d ./src/app/app.o ./src/app/app.su ./src/app/task_faults.cyclo ./src/app/task_faults.d ./src/app/task_faults.o ./src/app/task_faults.su ./src/app/task_scpi.cyclo ./src/app/task_scpi.d ./src/app/task_scpi.o ./src/app/task_scpi.su
 
 .PHONY: clean-src-2f-app
 

@@ -61,11 +61,29 @@ current wiring; channels beyond N stay pin/dead-time-reserved but
 unlocked, up through Timer F) plus the serial command layer. A PFM
 table can be uploaded, its length confirmed, and fired: `FIRE` starts
 playback from step 0 via the HRTIM master-repetition interrupt, and it
-auto-stops when the table is exhausted. There is still **no state
-machine** -- no ARM precondition, no interlock, no fault gating; `FIRE`
-takes effect immediately whenever sent, per current project decision
-(see `docs/command_reference.md`'s `FIRE` entry).
+auto-stops when the table is exhausted. Since 2026-09-29 (Phase 3) an
+operating-state machine gates it: `FIRE` needs `ARM`, every shot needs its
+own `ARM`, and every fault latches `FAULT` -- see the bullet below.
 
+- **Operating-state machine** (added 2026-09-29, Phase 3 of the port;
+  `src/app/control/state_machine.c`, `task_faults.c`, `cmd_state.c`):
+  IDLE -> `ARM` -> ARMED -> `FIRE` -> FIRING -> table ends -> IDLE;
+  `DISARM`; `STATE?`. **One fault type by design** (`SM_FAULT_GENERAL`):
+  PC10/HRTIM1_FLT6, any of the 12 GateDriverStatus inputs, or
+  `GENERAL:TEST:FAULT` puts it in FAULT from any state with an immediate
+  `PFM_ForceStop()` (no ramp-down -- unlike WHAM-XREX-PFMG474, whose
+  PID-driven ramps and per-channel fault types were deliberately not
+  ported). The outputs are made safe before the state machine even sees the
+  fault (PC10 in silicon, GateDriverStatus from its EXTI handler); the state
+  machine keeps it latched. `FAULT:CLEAR` -> IDLE only if both inputs
+  re-check healthy. Shot completion and fault latching are both detected in
+  `SM_PollFaults()` (main loop, interrupts masked) -- no state-machine call
+  from any ISR. Gates: `FIRE` (ERR 13 unless ARMED), `TABLE:BEGIN`/`STEP`
+  (ERR 13 while FIRING), `BOOT` (ERR 13 while ARMED/FIRING), `FWUPdate:*`
+  (ERR 13 unless IDLE). Host-tested (`tests/test_state_machine.c`, fakes
+  for the PFM engine, HRTIM fault flag, gate-driver latch and IRQ masking).
+  Not ported yet: external enable/trigger (PF13/PF15), DEBUG:FAULT:BYPASS,
+  telemetry events (Phase 5).
 - **Firmware update, boot diagnostics, `!BOOT` banner** (added
   2026-09-29, Phase 2 of the port from WHAM-XREX-PFMG474; `flash_bank.c`,
   `boot_diag.c`, `cmd_fwupdate.c`, `cmd_system.c`): `FWUPdate:*`
@@ -648,11 +666,11 @@ for the current standard to match.
    0x20 <value> <mask>`, masked so only the intended bit changes) after
    recording the current values. The WHAM-XREX simulator board runs
    `FLASH_OPTR = 0xBBEFF8AA` (`nSWBOOT0 = 0`, `IRHEN = 0`).
-6. **A firmware update needs the output stopped.** `FWUPdate:BEGin` and
-   `SWAP` refuse (`ERR 13`) while a table is playing. (Phase 3 will make
-   this "needs `STATE IDLE`" once the operating-state machine exists.) A
-   bench board with nothing wired to the gate-drive inputs may latch a
-   fault at boot; `FAULT:CLEAR` handles that.
+6. **A firmware update needs `STATE IDLE`.** `FWUPdate:BEGin` and `SWAP`
+   refuse (`ERR 13`) when ARMED, FIRING or in FAULT. A bench board with
+   nothing wired to the gate-drive inputs may boot in `FAULT GENERAL`;
+   `FAULT:CLEAR` then `STATE?` -- if it stays in FAULT, the inputs really
+   read as faulted (check `GDS?` against `GDS_FAULT_POLARITY`).
 
 ## Known gaps / in-flight work (as of 2026-08-31)
 

@@ -1,47 +1,101 @@
 /*
- * cmd_state.c -- serial command handlers: FAULT?/FAULT:CLEar.
- * Split out of the old single commands.c (2026-09-29); the handlers are
- * unchanged. See commands.h for the file map.
+ * cmd_state.c -- serial command handlers: FAULT?/FAULT:CLEar, ARM/DISARM/
+ * STATE?, GENERAL:TEST:FAULT. The states and fault policy are
+ * state_machine.h. See commands.h for the file map.
  */
 #include "commands.h"
 #include "cmd_common.h"
 #include "ctrlr_config.h"
-#include "hrtim.h"
-#include "gate_driver.h"
+#include "state_machine.h"
 #include <stdio.h>
 
 /* --------------------------------------------------------------------------
  * FAULT? / FAULT:CLEar
  *
- * Status/clear for BOTH of this project's fault sources, combined into
- * one operator-facing fault state (AnyFaultLatched(), above):
- *   - PC10/HRTIM1_FLT6 -- native HRTIM hardware fault input (hrtim.h).
- *     Autonomous in silicon; already fully in effect by the time either
- *     of these is ever called.
- *   - GateDriverStatus_01..12 (PE0..PE11) -- software/EXTI-driven fault
- *     interrupt (gate_driver.h), added 2026-09-08. Needs the EXTI ISR
- *     to actually run (GateDriver_CheckFault()), unlike the PC10 path.
- * These two mechanisms stay structurally independent underneath (two
- * separate latches, two separate detection paths) -- combined only
- * here, at the command layer, because from an operator's perspective
- * "is there a fault, and can I FIRE" is one question with one answer,
- * not two. FAULT:CLEAR clears both latches unconditionally (clearing
- * one that was never set is a harmless no-op); FAULT? reports 1 if
- * either is latched.
+ * FAULT? reports 1 while the controller is in FAULT or either hardware
+ * fault source (PC10/HRTIM1_FLT6, GateDriverStatus) is latched. FAULT:CLEar
+ * clears both sources, which re-check their physical inputs, and returns
+ * the state to IDLE if both are clear (SM_ClearFault()). The reply is "OK"
+ * either way -- a condition that is still present re-latches before this
+ * returns; check FAULT?/STATE? afterwards for the result. Clearing never
+ * restarts the output: that needs ARM and FIRE again.
  * -------------------------------------------------------------------------- */
 void cmd_fault_query(uart_instance_t *inst, char *args)
 {
     (void)args;
-
-    uart_send(inst, (AnyFaultLatched() != 0U) ? "OK 1\r\n" : "OK 0\r\n");
+    uart_send(inst, ((SM_GetState() == SM_STATE_FAULT) || (AnyFaultLatched() != 0U))
+                        ? "OK 1\r\n" : "OK 0\r\n");
 }
 
 void cmd_fault_clear(uart_instance_t *inst, char *args)
 {
     (void)args;
+    (void)SM_ClearFault();
+    uart_send(inst, "OK\r\n");
+}
 
-    HRTIM1_FaultClear();
-    GateDriver_FaultClear();
+/* --------------------------------------------------------------------------
+ * ARM / DISARM / STATE?
+ *
+ * ARM: IDLE -> ARMED. ERR 6 if a fault is latched, ERR 13 if not IDLE.
+ * DISARM: ARMED -> IDLE; "OK" (a harmless no-op) in any other state.
+ * STATE?: OK IDLE|ARMED|FIRING, or OK FAULT GENERAL.
+ * -------------------------------------------------------------------------- */
+void cmd_arm(uart_instance_t *inst, char *args)
+{
+    (void)args;
 
+    if ((SM_GetState() == SM_STATE_FAULT) || (AnyFaultLatched() != 0U))
+    {
+        SendErr(inst, ERR_FAULT_LATCHED, "Fault latched -- send FAULT:CLEAR first");
+        return;
+    }
+    if (SM_GetState() != SM_STATE_IDLE)
+    {
+        SendErr(inst, ERR_INVALID_STATE, "Can't ARM -- not currently IDLE");
+        return;
+    }
+    if (SM_Arm() == 0U)
+    {
+        SendErr(inst, ERR_INVALID_STATE, "Can't ARM -- arm conditions not met");   /* narrow race only */
+        return;
+    }
+    uart_send(inst, "OK\r\n");
+}
+
+void cmd_disarm(uart_instance_t *inst, char *args)
+{
+    (void)args;
+    SM_Disarm();
+    uart_send(inst, "OK\r\n");
+}
+
+void cmd_state_query(uart_instance_t *inst, char *args)
+{
+    (void)args;
+
+    switch (SM_GetState())
+    {
+        case SM_STATE_IDLE:   uart_send(inst, "OK IDLE\r\n");   break;
+        case SM_STATE_ARMED:  uart_send(inst, "OK ARMED\r\n");  break;
+        case SM_STATE_FIRING: uart_send(inst, "OK FIRING\r\n"); break;
+        case SM_STATE_FAULT:  uart_send(inst, "OK FAULT GENERAL\r\n"); break;
+        default:              uart_send(inst, "OK UNKNOWN\r\n"); break;
+    }
+}
+
+/* --------------------------------------------------------------------------
+ * GENERAL:TEST:FAULT
+ *
+ * Software fault injection for bench-testing the fault path end to end
+ * (same name as WHAM-XREX-PFMG474's): enters FAULT from any state, force-
+ * stopping the output exactly as a real fault would. Cleared by
+ * FAULT:CLEar like any other fault. It can only stop output, never start
+ * it.
+ * -------------------------------------------------------------------------- */
+void cmd_general_test_fault(uart_instance_t *inst, char *args)
+{
+    (void)args;
+    SM_ReportGeneralFault();
     uart_send(inst, "OK\r\n");
 }

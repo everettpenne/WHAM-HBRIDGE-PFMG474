@@ -10,6 +10,7 @@
 #include "gate_driver.h"
 #include "qspi_test.h"
 #include "pfm_input.h"
+#include "state_machine.h"
 #include "flash_bank.h"
 #include "boot_diag.h"
 #include "mcu.h"
@@ -39,6 +40,11 @@ void App_Init(void)
        exactly that case -- any fault already present at boot -- instead
        of depending on a future transition that might never come. */
     GateDriver_CheckFault();
+
+    /* Operating state (state_machine.h): IDLE. A fault found by the check
+       above is picked up by the first TaskFaults_Poll(), before any command
+       can be processed. */
+    SM_Init();
 
     /* QUADSPI bring-up (PE12-PE15/PB10-PB11, W25Q128JVS) -- see
        qspi_test.h for scope. No-op when QSPI_TEST_FEATURE_ENABLED is 0,
@@ -74,14 +80,24 @@ void App_Init(void)
      !BOOT diag ...     previous boot's record and this boot's reset cause
                         (boot_diag.h)
      !BOOT <greeting>
-   STATE is IDLE at every boot (no fire can be in progress yet); it becomes
-   the operating-state machine's state when that exists. */
+   STATE is the operating state (state_machine.h): IDLE, or FAULT if a fault
+   source was already latched at boot. */
 void App_SendBootBanner(void)
 {
     char banner[200];
     uint8_t bank = FlashBank_Active();
     uint8_t bfb2 = FlashBank_Bfb2();
-    const char *stateName = (PFM_GetState() == PFM_STATE_RUNNING) ? "FIRING" : "IDLE";
+    const char *stateName;
+
+    SM_PollFaults();   /* so a fault present at boot shows in the banner */
+    switch (SM_GetState())
+    {
+        case SM_STATE_IDLE:   stateName = "IDLE";   break;
+        case SM_STATE_ARMED:  stateName = "ARMED";  break;
+        case SM_STATE_FIRING: stateName = "FIRING"; break;
+        case SM_STATE_FAULT:  stateName = "FAULT";  break;
+        default:              stateName = "UNKNOWN"; break;
+    }
 
     snprintf(banner, sizeof(banner),
              "!BOOT %s %s %s%s BANK=%u BFB2=%u STATE=%s tick=%lu\r\n",
@@ -97,8 +113,12 @@ void App_SendBootBanner(void)
     uart_send(&uart2, "!BOOT Rise and shine, controller's awake and ready to work \xF0\x9F\x8C\x9E\r\n");
 }
 
+/* One main-loop iteration. Order matters: fault detection first, the
+   command link last. */
 void App_Poll(void)
 {
+    TaskFaults_Poll();
+
     /* Polls for a completed serial command line and dispatches it. */
     TaskScpi_Poll();
 }

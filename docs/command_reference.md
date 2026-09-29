@@ -21,13 +21,13 @@ Ported from the sibling PFM-STM32G474 project, per project decision:
 | 3 | Table full (`PFM_TABLE_SIZE` entries already appended) |
 | 4 | Invalid `TABLE:STEP` arguments (wrong count — must be `1 + HRTIM_NUM_CHANNELS`, see `CONFig:CHANnels?` — or a value outside uint16 range 0-65535) |
 | 5 | Table is empty — `FIRE` has nothing to play back |
-| 6 | Fault latched — either PC10/HRTIM1_FLT6 (native HRTIM hardware fault input) or the GateDriverStatus_01..12 EXTI interrupt (`PE0`-`PE11`) — `FAULT:CLEAR` required before `FIRE` will work again |
+| 6 | Fault latched — PC10/HRTIM1_FLT6, the GateDriverStatus_01..12 inputs (`PE0`-`PE11`) or `GENERAL:TEST:FAULT` — `FAULT:CLEAR` required before `ARM`/`FIRE` will work again |
 | 7 | QUADSPI command failed or timed out (see `QSPI:ID?`) |
 | 8 | Invalid `PFM_Input` channel (1-6) |
 | 9 | `M` out of range for `PFMIN:CAPTURE` (1-`PFM_INPUT_MAX_PERIODS`) |
 | 10 | `TABLE:STEP` `per` value implies a carrier frequency above `PFM_MAX_CARRIER_FREQ_HZ` |
 | 12 | Invalid command arguments — see the specific command's own usage |
-| 13 | Not allowed in the current state (`FWUPdate:*` while the output is running, no transfer in progress, nothing verified) |
+| 13 | Not allowed in the current state: `FIRE` when not `ARMED`, `ARM` when not `IDLE`, `TABLE:BEGIN`/`STEP` while `FIRING`, `BOOT` while `ARMED`/`FIRING`, `FWUPdate:*` when not `IDLE` or with no transfer/verified image |
 | 17 | `FWUPdate:*` flash/CRC/image/option-byte failure |
 
 Codes are never renumbered or reused once assigned, matching the
@@ -51,7 +51,8 @@ and the command link is live. `!BOOT` never collides with a reply
 
 - Line 1: board, firmware version, git commit (`-dirty` if built from an
   uncommitted tree), the running flash bank, the `BFB2` option bit, the
-  state (`IDLE` at every boot; `FIRING` if a table is playing), and
+  operating state (`IDLE`, or `FAULT` if a fault was already present at
+  boot), and
   `HAL_GetTick()` at that point.
 - Line 2 (`src/drivers/boot_diag.h`, `.noinit` RAM — survives every reset
   but not a power cycle): `boot` counts boots that reached `main()`
@@ -143,11 +144,8 @@ is nonzero (the default). When disabled, `BOOT` is simply unrecognized
 (`ERR 1 Unknown command`), like any other unknown mnemonic — see that
 header for exactly what disabling the module does.
 
-No state-machine/Firing concept exists in this firmware yet, so `BOOT`
-has no rejection conditions today. When application logic that can be
-mid-operation is added, gate this command the same way the sibling
-project's `cmd_boot()` does (reject with an `ERR` code while active —
-resetting under load would drop outputs uncontrolled).
+Refused with `ERR 13` while `ARMED` or `FIRING` (resetting under load would
+drop the outputs uncontrolled); allowed in `IDLE` and `FAULT`.
 
 ### `TABLE:BEGIN`, `TABLE:STEP`, `TABLE:END`, `TABLE?`
 
@@ -195,44 +193,67 @@ before uploading, rather than assuming N.
 
 ### `FIRE`
 
-Begins PWM output: (re)starts playback of whatever table is currently
-uploaded, from step 0. Playback advances automatically, one table
-entry per PWM period, driven by the HRTIM1 master-repetition interrupt
-(`HRTIM1_Master_IRQHandler()` in `stm32g4xx_it.c`, calling
-`PFM_CycleBoundaryHandler()` in `pfm.c`) — no polling, no further
-commands needed once fired. Output stops automatically, at a coherent
-period boundary, once the last table entry has completed.
+Starts table playback from step 0. Playback advances automatically, one
+table entry per PWM period, driven by the HRTIM1 master-repetition
+interrupt (`PFM_CycleBoundaryHandler()` in `pfm.c`), and stops on its own,
+at a coherent period boundary, after the last entry.
+
+**Needs `ARMED`** (gated 2026-09-29; before that `FIRE` took effect
+immediately in any state). `FIRE` moves the state to `FIRING`; when the
+table ends the state returns to `IDLE`, so every shot needs its own `ARM`.
+See "Operating state" below.
 
 ```
+> ARM
+< OK
 > FIRE
 < OK
-  (HRTIM channels 0..N-1 begin switching, evenly phase-spaced -- see
-   hrtim.c's HRTIM1_PWM_Start(); channels beyond N are never started,
-   see hrtim.h and ctrlr_config.h)
-  ... plays back every uploaded (per, cmp0, ..., cmp(N-1)) entry in
-      order, one period each ...
-  (output stops on its own after the last entry — no further command
-   or reply marks this; poll TABLE? or scope the outputs)
+> STATE?
+< OK FIRING
+  ... plays back every uploaded (per, cmp0, ..., cmp(N-1)) entry ...
+> STATE?
+< OK IDLE
 ```
 
-- No `ARM`/state-machine interlock exists in this firmware — `FIRE`
-  always takes effect immediately, whether the controller was idle or
-  already mid-shot (re-firing mid-shot restarts from step 0). If a
-  fuller interlock/fault-gated firing sequence is ever needed, this is
-  the command to extend, not a design decision this entry documents as
-  final.
-- Rejects with `ERR 5` if the table is empty (`TABLE?` reports 0).
-  Without this check, an empty-table `FIRE` would still briefly enable
-  outputs at step 0's (garbage, never-written) register contents before
-  the very first master-repetition interrupt stopped them again —
-  `ERR 5` catches this before it can happen at all.
-- No `STOP` command exists yet — playback only stops on its own, at
-  table exhaustion. Adding an operator-initiated stop is future work.
+Checked in this order: `ERR 6` a fault is latched, `ERR 13` not `ARMED`,
+`ERR 5` the table is empty. There is no `STOP` command; a shot ends at the
+end of the table, or at once on any fault (including `GENERAL:TEST:FAULT`).
+The table can't be changed while `FIRING` (`TABLE:BEGIN`/`STEP` give
+`ERR 13`).
+
+### Operating state: `ARM`, `DISARM`, `STATE?`, `GENERAL:TEST:FAULT`
+
+Added 2026-09-29 (`src/app/control/state_machine.h`, mirroring
+WHAM-XREX-PFMG474's state machine).
+
+```
+IDLE  --ARM-->  ARMED  --FIRE-->  FIRING  --table ends-->  IDLE
+  ^               |
+  +----DISARM-----+
+any state --fault--> FAULT --FAULT:CLEAR (inputs healthy)--> IDLE
+```
+
+| Command | Reply |
+|---|---|
+| `ARM` | `OK`; `ERR 6` if a fault is latched, `ERR 13` if not `IDLE`. Nothing electrical happens on `ARM` |
+| `DISARM` | `OK` (`ARMED` -> `IDLE`; a harmless no-op in any other state) |
+| `STATE?` | `OK IDLE`, `OK ARMED`, `OK FIRING` or `OK FAULT GENERAL` |
+| `GENERAL:TEST:FAULT` | `OK`; enters `FAULT` exactly as a real fault would (output force-stopped). A bench test of the fault path; it can only stop output. Cleared by `FAULT:CLEAR` |
+
+**One fault type.** Every fault source — PC10/HRTIM1_FLT6, any of the 12
+GateDriverStatus inputs, and `GENERAL:TEST:FAULT` — puts the controller in
+`FAULT GENERAL`, from any state. The response is an immediate force-stop of
+the output (no ramp-down). The output is already safe before the state
+changes (PC10 gates the HRTIM in hardware; a GateDriverStatus edge
+force-stops from its interrupt); the state machine keeps it latched until
+`FAULT:CLEAR`. `FAULT:CLEAR` re-checks both inputs and returns to `IDLE`
+only if both are healthy — never straight back to `ARMED`. A fault already
+present at boot shows in the `!BOOT` banner as `STATE=FAULT`.
 
 ### `FAULT?`, `FAULT:CLEAR`
 
 Status/clear for **two independent fault sources**, combined into one
-answer here (`commands.c`'s `AnyFaultLatched()`) — from an operator's
+answer here (`cmd_common.c`'s `AnyFaultLatched()`, plus the `FAULT` state) — from an operator's
 perspective, "is there a fault, and can I `FIRE`" is one question, not
 two, even though the two mechanisms underneath stay structurally
 separate:
@@ -255,24 +276,29 @@ separate:
 ```
 > FAULT?
 < OK 0
+> ARM
+< OK
 > FIRE
 < OK
    ... (a fault trips mid-shot; outputs go safe immediately) ...
+> STATE?
+< OK FAULT GENERAL
 > FAULT?
 < OK 1
 > FIRE
 < ERR 6 Fault latched -- send FAULT:CLEAR first
 > FAULT:CLEAR
 < OK
-> FAULT?
-< OK 0
+> STATE?
+< OK IDLE
 ```
 
-- **`FAULT?`** — `OK 0` (healthy) or `OK 1` (latched), either source.
-- **`FAULT:CLEAR`** — clears both latches unconditionally (clearing a
-  source that was never tripped is a harmless no-op). Does **not**
-  itself reconnect/restart outputs — that's the next explicit `FIRE`'s
-  job. For the GateDriverStatus source specifically, clearing
+- **`FAULT?`** — `OK 0` (healthy) or `OK 1` (in `FAULT`, or either source latched).
+- **`FAULT:CLEAR`** — clears both latches (clearing a source that was
+  never tripped is a harmless no-op) and returns the state to `IDLE` if
+  both are healthy; the reply is `OK` either way, so check `STATE?`.
+  Does **not** itself reconnect/restart outputs — that needs `ARM` and
+  `FIRE`. For the GateDriverStatus source specifically, clearing
   immediately re-validates by re-checking all 12 pins: if any pin is
   still in its fault state, `FAULT:CLEAR` re-latches before its own
   `OK` reply even goes out, rather than reporting success while the
@@ -357,15 +383,15 @@ reply before sending the next line.
 
 | Command | Reply | Notes |
 |---|---|---|
-| `FWUPdate:BEGin <size> <crc32hex>` | `OK ERASED <n> PAGES BANK <b>` | Needs the output stopped (no `FIRE` in progress). `size` = image length padded with `0xFF` to a multiple of 8, at most 262144. CRC = standard CRC-32 (`zlib.crc32`) of the padded image. Erases only the inactive bank, then checks it reads blank |
+| `FWUPdate:BEGin <size> <crc32hex>` | `OK ERASED <n> PAGES BANK <b>` | Needs `STATE IDLE`. `size` = image length padded with `0xFF` to a multiple of 8, at most 262144. CRC = standard CRC-32 (`zlib.crc32`) of the padded image. Erases only the inactive bank, then checks it reads blank |
 | `FWUPdate:DATA <offsethex> <hex>` | `OK` | 8-48 bytes, a multiple of 8, offsets strictly in order from 0 |
 | `FWUPdate:END` | `OK VERIFIED CRC=<crc>` | CRC over the written bank, then checks the initial stack pointer is in SRAM, the reset vector is a Thumb address inside the image, and the image contains this build's NUL-terminated product name (`HW_BOARD_NAME`), so another product's image can't be loaded |
-| `FWUPdate:SWAP` | `OK SWAPPING -- rebooting into bank <b>` | Needs a verified image and the output stopped. Programs `BFB2`, then reloads option bytes (a full reset) |
+| `FWUPdate:SWAP` | `OK SWAPPING -- rebooting into bank <b>` | Needs a verified image and `STATE IDLE`. Programs `BFB2`, then reloads option bytes (a full reset) |
 | `FWUPdate:ROLLback` | same as `SWAP` | Boots the image already in the other bank, after the same sanity checks (no CRC — there's no reference). Refused mid-transfer |
 | `FWUPdate:ABORt` | `OK` | Forgets a transfer. The inactive bank is left as is |
 | `FWUPdate:STATus?` | `OK BANK=<1\|2> BFB2=<0\|1> DBANK=<0\|1> STATE=<IDLE\|RECEIVING\|VERIFIED> RX=<n>/<size>` | `BANK` = physical bank currently running |
 
-Errors: `ERR 12` bad arguments/offset, `ERR 13` wrong state (output running,
+Errors: `ERR 12` bad arguments/offset, `ERR 13` wrong state (not `IDLE`,
 no transfer, nothing verified), `ERR 17` flash/CRC/image/option-byte
 failure. Nothing before the final swap can affect the running image.
 

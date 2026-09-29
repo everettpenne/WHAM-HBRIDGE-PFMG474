@@ -10,7 +10,7 @@
  * Wire protocol (strict stop-and-wait -- the serial link has a single line
  * buffer, so the host must wait for each reply before sending the next
  * line):
- *   FWUPdate:BEGin <size> <crc32hex>   erase inactive bank (needs the output stopped)
+ *   FWUPdate:BEGin <size> <crc32hex>   erase inactive bank (needs IDLE)
  *   FWUPdate:DATA <offsethex> <hex>    program 8..48 bytes, offsets in order
  *   FWUPdate:END                       CRC + image sanity check
  *   FWUPdate:SWAP                      set BFB2 to boot the new image, reset
@@ -23,7 +23,7 @@
 #include "commands.h"
 #include "cmd_common.h"
 #include "flash_bank.h"
-#include "pfm.h"
+#include "state_machine.h"
 #include "boot_diag.h"
 #include "mcu.h"
 #include <stdio.h>
@@ -99,9 +99,9 @@ void cmd_fwup_begin(uart_instance_t *inst, char *args)
         SendErr(inst, ERR_INVALID_ARGS, "size must be a nonzero multiple of 8, at most one bank (262144)");
         return;
     }
-    if (PFM_GetState() != PFM_STATE_STOPPED)
+    if (SM_GetState() != SM_STATE_IDLE)
     {
-        SendErr(inst, ERR_INVALID_STATE, "firmware update needs the output stopped (no FIRE in progress)");
+        SendErr(inst, ERR_INVALID_STATE, "firmware update needs STATE IDLE");
         return;
     }
     if (FlashBank_DualBank() == 0U)
@@ -233,9 +233,9 @@ void cmd_fwup_swap(uart_instance_t *inst, char *args)
         SendErr(inst, ERR_INVALID_STATE, "no verified image -- complete FWUPdate:END first");
         return;
     }
-    if (PFM_GetState() != PFM_STATE_STOPPED)
+    if (SM_GetState() != SM_STATE_IDLE)
     {
-        SendErr(inst, ERR_INVALID_STATE, "firmware update needs the output stopped (no FIRE in progress)");
+        SendErr(inst, ERR_INVALID_STATE, "firmware update needs STATE IDLE");
         return;
     }
     BootInactiveBank(inst);
@@ -251,9 +251,9 @@ void cmd_fwup_rollback(uart_instance_t *inst, char *args)
         SendErr(inst, ERR_INVALID_STATE, "transfer in progress -- the other bank is partly written");
         return;
     }
-    if (PFM_GetState() != PFM_STATE_STOPPED)
+    if (SM_GetState() != SM_STATE_IDLE)
     {
-        SendErr(inst, ERR_INVALID_STATE, "firmware update needs the output stopped (no FIRE in progress)");
+        SendErr(inst, ERR_INVALID_STATE, "firmware update needs STATE IDLE");
         return;
     }
     problem = FlashBank_InactiveImageProblem(FlashBank_Size());

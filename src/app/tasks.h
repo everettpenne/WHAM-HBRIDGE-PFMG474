@@ -5,6 +5,7 @@
 #ifndef TASKS_H
 #define TASKS_H
 
+void TaskFaults_Poll(void);
 void TaskScpi_Poll(void);
 
 #endif /* TASKS_H */

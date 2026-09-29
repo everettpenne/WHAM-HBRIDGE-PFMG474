@@ -73,6 +73,10 @@ static const scpi_command_t command_table[] = {
     { "DIAGnostic:RSTCause:CLEar", cmd_diag_rstcause_clear },
 
     { "FAULT?",              cmd_fault_query  },
+    { "ARM",                 cmd_arm          },
+    { "DISARM",              cmd_disarm       },
+    { "STATE?",              cmd_state_query  },
+    { "GENERAL:TEST:FAULT",  cmd_general_test_fault },
     { "FAULT:CLEar",         cmd_fault_clear  },
 
     /* Raw GateDriverStatus_01..12 (PE0..PE11) diagnostic readback --

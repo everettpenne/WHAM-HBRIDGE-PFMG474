@@ -12,10 +12,11 @@ OUT     := $(ROOT)/build/tests
 CC      ?= cc
 CFLAGS  := -std=gnu11 -Wall -Wextra -Werror -g -I. -I$(ROOT)/src/drivers \
            -I$(ROOT)/src/middleware/scpi \
-           -I$(ROOT)/src/config -I$(ROOT)/build/generated -I$(OUT)
+           -I$(ROOT)/src/config -I$(ROOT)/src/app/control \
+           -I$(ROOT)/src/app/protection -I$(ROOT)/build/generated -I$(OUT)
 
 SCPI    := $(ROOT)/src/middleware/scpi/scpi_parser.c
-TESTS   := $(OUT)/test_scpi_parser $(OUT)/test_command_table
+TESTS   := $(OUT)/test_scpi_parser $(OUT)/test_command_table $(OUT)/test_state_machine
 
 .PHONY: all run clean
 all: run
@@ -35,6 +36,10 @@ $(OUT)/command_patterns.inc: $(ROOT)/src/app/commands/command_table.c | $(OUT)
 
 $(OUT)/test_command_table: test_command_table.c $(OUT)/command_patterns.inc fake_uart.c $(SCPI) test_util.h | $(OUT)
 	$(CC) $(CFLAGS) -o $@ test_command_table.c fake_uart.c $(SCPI)
+
+$(OUT)/test_state_machine: test_state_machine.c $(ROOT)/src/app/control/state_machine.c \
+                           $(ROOT)/src/app/control/state_machine.h test_util.h | $(OUT)
+	$(CC) $(CFLAGS) -o $@ test_state_machine.c $(ROOT)/src/app/control/state_machine.c
 
 clean:
 	rm -rf $(OUT)

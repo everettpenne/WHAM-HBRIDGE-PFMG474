@@ -5,13 +5,16 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
-../src/app/control/pfm.c
+../src/app/control/pfm.c \
+../src/app/control/state_machine.c
 
 OBJS += \
-./src/app/control/pfm.o
+./src/app/control/pfm.o \
+./src/app/control/state_machine.o
 
 C_DEPS += \
-./src/app/control/pfm.d
+./src/app/control/pfm.d \
+./src/app/control/state_machine.d
 
 
 # Each subdirectory must supply rules for building sources it contributes
@@ -21,7 +24,7 @@ src/app/control/%.o src/app/control/%.su src/app/control/%.cyclo: ../src/app/con
 clean: clean-src-2f-app-2f-control
 
 clean-src-2f-app-2f-control:
-	-$(RM) ./src/app/control/pfm.cyclo ./src/app/control/pfm.d ./src/app/control/pfm.o ./src/app/control/pfm.su
+	-$(RM) ./src/app/control/pfm.cyclo ./src/app/control/pfm.d ./src/app/control/pfm.o ./src/app/control/pfm.su ./src/app/control/state_machine.cyclo ./src/app/control/state_machine.d ./src/app/control/state_machine.o ./src/app/control/state_machine.su
 
 .PHONY: clean-src-2f-app-2f-control
 

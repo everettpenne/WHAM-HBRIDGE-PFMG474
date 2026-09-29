@@ -33,7 +33,7 @@ extern "C" {
  *   cmd_fwupdate.c FWUPdate:* (in-application firmware update)
  *   cmd_table.c    legacy TABle:*, FIRE, PFM:DIAG?/GAPLOG?
  *   cmd_config.c   CONFig:*
- *   cmd_state.c    FAULT?/FAULT:CLEar
+ *   cmd_state.c    FAULT?/FAULT:CLEar, ARM/DISARM/STATE?, GENERAL:TEST:FAULT
  *   cmd_io.c       GDS?
  *   cmd_pfmin.c    PFMIN:*
  * Shared reply/precondition helpers live in cmd_common.c/.h.
@@ -180,6 +180,12 @@ void cmd_fwup_swap(uart_instance_t *inst, char *args);      /* FWUPdate:SWAP */
 void cmd_fwup_rollback(uart_instance_t *inst, char *args);  /* FWUPdate:ROLLback */
 void cmd_fwup_abort(uart_instance_t *inst, char *args);     /* FWUPdate:ABORt */
 void cmd_fwup_status(uart_instance_t *inst, char *args);    /* FWUPdate:STATus? */
+
+/* Operating state (state_machine.h), see cmd_state.c */
+void cmd_arm(uart_instance_t *inst, char *args);                 /* ARM -- IDLE -> ARMED */
+void cmd_disarm(uart_instance_t *inst, char *args);              /* DISARM -- ARMED -> IDLE */
+void cmd_state_query(uart_instance_t *inst, char *args);         /* STATE? -- OK IDLE|ARMED|FIRING|FAULT GENERAL */
+void cmd_general_test_fault(uart_instance_t *inst, char *args);  /* GENERAL:TEST:FAULT -- software fault injection */
 
 /* Matches a received line against the command table and runs the handler
    (or replies ERR 1). Called from the SCPI task (task_scpi.c). */

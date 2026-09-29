@@ -20,7 +20,7 @@
 
 /* Set only from GateDriver_CheckFault() (ISR context, EXTI0..EXTI4,
    EXTI9_5, EXTI15_10 -- see stm32g4xx_it.c), cleared only from
-   GateDriver_FaultClear() (main-loop context, commands.c's
+   GateDriver_FaultClear() (main-loop context, state_machine.c's SM_ClearFault(), from
    FAULT:CLEAR). volatile: written from ISR, read from the main loop
    via GateDriver_FaultIsLatched(). */
 static volatile uint8_t g_gdsFaultLatched = 0U;
