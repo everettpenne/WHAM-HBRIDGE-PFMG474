@@ -25,7 +25,13 @@ typedef enum
     ERR_QSPI_FAILED         = 7,   /* QSPI:ID? command failed or timed out */
     ERR_PFMIN_BAD_CHANNEL   = 8,   /* PFM_Input channel not 1-6 */
     ERR_PFMIN_BAD_COUNT     = 9,   /* PFMIN:CAPTURE M out of 1-PFM_INPUT_MAX_PERIODS */
-    ERR_CARRIER_TOO_HIGH    = 10   /* TABle:STEP per above the max carrier frequency */
+    ERR_CARRIER_TOO_HIGH    = 10,  /* TABle:STEP per above the max carrier frequency */
+    /* 11, 14, 15, 16: used by WHAM-XREX-PFMG474 only (invalid channel,
+       nickname, external enable) -- reserved so the shared numbers mean the
+       same thing on both projects. */
+    ERR_INVALID_ARGS        = 12,  /* wrong argument count, or non-numeric/out-of-range */
+    ERR_INVALID_STATE       = 13,  /* not allowed in the current state */
+    ERR_FWUPDATE            = 17   /* FWUPdate:* flash/CRC/image/option-byte failure */
 } cmd_err_t;
 
 /* Send "ERR <code> <msg>\r\n". code is an int, not cmd_err_t, so every call

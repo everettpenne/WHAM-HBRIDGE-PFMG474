@@ -59,6 +59,19 @@ static const scpi_command_t command_table[] = {
 
     /* PC10/HRTIM1_FLT6 hardware fault status/clear -- see commands.c's
        own header comment on cmd_fault_query()/cmd_fault_clear(). */
+    /* In-application firmware update (dual-bank) and boot diagnostics --
+       see cmd_fwupdate.c / flash_bank.h and cmd_system.c. */
+    { "FWUPdate:BEGin",      cmd_fwup_begin       },
+    { "FWUPdate:DATA",       cmd_fwup_data        },
+    { "FWUPdate:END",        cmd_fwup_end         },
+    { "FWUPdate:SWAP",       cmd_fwup_swap        },
+    { "FWUPdate:ROLLback",   cmd_fwup_rollback    },
+    { "FWUPdate:ABORt",      cmd_fwup_abort       },
+    { "FWUPdate:STATus?",    cmd_fwup_status      },
+    { "DIAGnostic:OPTBytes?",      cmd_diag_optbytes_query },
+    { "DIAGnostic:RSTCause?",      cmd_diag_rstcause_query },
+    { "DIAGnostic:RSTCause:CLEar", cmd_diag_rstcause_clear },
+
     { "FAULT?",              cmd_fault_query  },
     { "FAULT:CLEar",         cmd_fault_clear  },
 

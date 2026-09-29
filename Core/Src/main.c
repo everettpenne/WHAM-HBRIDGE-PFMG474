@@ -24,6 +24,7 @@
 #include "app.h"
 #include "boot_jump.h"
 #include "board_io.h"
+#include "boot_diag.h"
 #include "hrtim_hw.h"
 #include "mcu.h"
 #include "uart_hw.h"
@@ -83,6 +84,10 @@ int main(void)
      purpose, so this call site never needs its own #if. */
   BootJump_CheckAndEnter();
 
+  /* Boot diagnostics (boot_diag.h): keep the previous boot's record for
+     the !BOOT banner and start this boot's. */
+  BootDiag_Begin();
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -101,13 +106,14 @@ int main(void)
      can be exposed to it, however briefly. Ported from the sibling
      PFM-STM32G474 project's main.c, same placement. */
   Mcu_SetSysTickHighestPriority();
+  BOOT_DIAG_STAGE(BD_STAGE_HAL_INIT);
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  BOOT_DIAG_STAGE(BD_STAGE_CLOCK);
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -117,6 +123,9 @@ int main(void)
   /* USER CODE BEGIN 2 */
   uart_bind(&uart2, &huart2);
   App_Init();
+  BOOT_DIAG_STAGE(BD_STAGE_APP_INIT);
+  App_SendBootBanner();
+  BOOT_DIAG_STAGE(BD_STAGE_MAIN_LOOP);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -224,6 +233,7 @@ static void MX_HRTIM1_Init(void)
   /* USER CODE END HRTIM1_Init 1 */
   HRTIM1_FullInit();
   /* USER CODE BEGIN HRTIM1_Init 2 */
+  BOOT_DIAG_STAGE(BD_STAGE_HRTIM);
   /* USER CODE END HRTIM1_Init 2 */
 }
 
@@ -301,6 +311,7 @@ static void MX_USART2_UART_Init(void)
      position, just renumbered to make room. */
   HAL_NVIC_SetPriority(USART2_IRQn, 3U, 0U);
   HAL_NVIC_EnableIRQ(USART2_IRQn);
+  BOOT_DIAG_STAGE(BD_STAGE_USART);
   /* USER CODE END USART2_Init 2 */
 
 }
@@ -322,6 +333,7 @@ static void MX_GPIO_Init(void)
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
   BoardIo_Init();
+  BOOT_DIAG_STAGE(BD_STAGE_GPIO);
 
   /* USER CODE END MX_GPIO_Init_2 */
 }
@@ -338,6 +350,8 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
+  g_bootDiag.errCount++;
+  g_bootDiag.errStage = g_bootDiag.lastStage;
   while (1)
   {
   }

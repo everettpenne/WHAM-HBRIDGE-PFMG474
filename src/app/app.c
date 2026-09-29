@@ -10,6 +10,12 @@
 #include "gate_driver.h"
 #include "qspi_test.h"
 #include "pfm_input.h"
+#include "flash_bank.h"
+#include "boot_diag.h"
+#include "mcu.h"
+#include "ctrlr_config.h"
+#include "git_version.h"
+#include <stdio.h>
 
 void App_Init(void)
 {
@@ -58,6 +64,37 @@ void App_Init(void)
        cmd_fire() -> PFM_Restart()). Ported from the sibling
        PFM-STM32G474 project's main.c, same placement/rationale. */
     HRTIM1_EnableMasterInterrupt();
+}
+
+/* Unsolicited boot signal, sent once at the end of start-up: a host (for
+   example python/fw_update.py after a bank swap) treats a !BOOT line as
+   proof the new image is running. Lines start with "!BOOT" so they can never
+   be mistaken for an OK/ERR reply.
+     !BOOT <name> <version> <commit>[-dirty] BANK=<1|2> BFB2=<0|1> STATE=<s> tick=<ms>
+     !BOOT diag ...     previous boot's record and this boot's reset cause
+                        (boot_diag.h)
+     !BOOT <greeting>
+   STATE is IDLE at every boot (no fire can be in progress yet); it becomes
+   the operating-state machine's state when that exists. */
+void App_SendBootBanner(void)
+{
+    char banner[200];
+    uint8_t bank = FlashBank_Active();
+    uint8_t bfb2 = FlashBank_Bfb2();
+    const char *stateName = (PFM_GetState() == PFM_STATE_RUNNING) ? "FIRING" : "IDLE";
+
+    snprintf(banner, sizeof(banner),
+             "!BOOT %s %s %s%s BANK=%u BFB2=%u STATE=%s tick=%lu\r\n",
+             HW_BOARD_NAME, FW_VERSION_STRING, FW_GIT_COMMIT,
+             (FW_GIT_DIRTY != 0U) ? "-dirty" : "",
+             (unsigned)bank, (unsigned)bfb2, stateName,
+             (unsigned long)Mcu_GetTickMs());
+    uart_send(&uart2, banner);
+
+    /* Previous boot's record and this boot's reset cause (boot_diag.c). */
+    BootDiag_FormatReport(banner, sizeof(banner));
+    uart_send(&uart2, banner);
+    uart_send(&uart2, "!BOOT Rise and shine, controller's awake and ready to work \xF0\x9F\x8C\x9E\r\n");
 }
 
 void App_Poll(void)

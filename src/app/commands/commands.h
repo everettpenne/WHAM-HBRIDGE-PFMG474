@@ -29,7 +29,8 @@ extern "C" {
  * patterns and handlers is command_table.c.
  *
  * Handlers are implemented one file per subsystem (src/app/commands/cmd_*.c):
- *   cmd_system.c   *IDN?, BOOT, QSPI:ID?
+ *   cmd_system.c   *IDN?, BOOT, DIAGnostic:OPTBytes?/RSTCause, QSPI:ID?
+ *   cmd_fwupdate.c FWUPdate:* (in-application firmware update)
  *   cmd_table.c    legacy TABle:*, FIRE, PFM:DIAG?/GAPLOG?
  *   cmd_config.c   CONFig:*
  *   cmd_state.c    FAULT?/FAULT:CLEar
@@ -165,6 +166,20 @@ void cmd_pfmin_dmastat(uart_instance_t *inst, char *args); /* PFMIN:DMASTAT? -- 
                                                                 HAL_TIM_IC_Start_DMA()
                                                                 return code per channel */
 #endif
+
+/* DIAGnostic:OPTBytes?/RSTCause -- boot-source option bits and reset-cause flags, see cmd_system.c */
+void cmd_diag_optbytes_query(uart_instance_t *inst, char *args);   /* DIAGnostic:OPTBytes? */
+void cmd_diag_rstcause_query(uart_instance_t *inst, char *args);   /* DIAGnostic:RSTCause? */
+void cmd_diag_rstcause_clear(uart_instance_t *inst, char *args);   /* DIAGnostic:RSTCause:CLEar */
+
+/* FWUPdate:* -- in-application firmware update, see cmd_fwupdate.c */
+void cmd_fwup_begin(uart_instance_t *inst, char *args);     /* FWUPdate:BEGin <size> <crc32hex> */
+void cmd_fwup_data(uart_instance_t *inst, char *args);      /* FWUPdate:DATA <offsethex> <hex> */
+void cmd_fwup_end(uart_instance_t *inst, char *args);       /* FWUPdate:END */
+void cmd_fwup_swap(uart_instance_t *inst, char *args);      /* FWUPdate:SWAP */
+void cmd_fwup_rollback(uart_instance_t *inst, char *args);  /* FWUPdate:ROLLback */
+void cmd_fwup_abort(uart_instance_t *inst, char *args);     /* FWUPdate:ABORt */
+void cmd_fwup_status(uart_instance_t *inst, char *args);    /* FWUPdate:STATus? */
 
 /* Matches a received line against the command table and runs the handler
    (or replies ERR 1). Called from the SCPI task (task_scpi.c). */

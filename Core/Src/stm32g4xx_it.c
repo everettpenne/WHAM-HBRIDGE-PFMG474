@@ -27,6 +27,7 @@
 #include "pfm.h"
 #include "gate_driver.h"
 #include "pfm_input_hw.h"
+#include "boot_diag.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -77,7 +78,11 @@ extern UART_HandleTypeDef huart2;   /* defined in main.c; same local-extern
 void NMI_Handler(void)
 {
   /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
-
+  /* Boot diagnostics (boot_diag.h): this handler spins forever, so record
+     it for the next boot's banner. */
+  g_bootDiag.nmiCount++;
+  g_bootDiag.nmiStage = g_bootDiag.lastStage;
+  g_bootDiag.nmiEccr  = FLASH->ECCR;
   /* USER CODE END NonMaskableInt_IRQn 0 */
   /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
    while (1)
@@ -92,7 +97,12 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
   /* USER CODE BEGIN HardFault_IRQn 0 */
-
+  /* Boot diagnostics (boot_diag.h): this handler spins forever, so record
+     it for the next boot's banner. */
+  g_bootDiag.faultCount++;
+  g_bootDiag.faultStage = g_bootDiag.lastStage;
+  g_bootDiag.faultCfsr  = SCB->CFSR;
+  g_bootDiag.faultHfsr  = SCB->HFSR;
   /* USER CODE END HardFault_IRQn 0 */
   while (1)
   {
