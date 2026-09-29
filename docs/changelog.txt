@@ -19,6 +19,43 @@ WHAM-HBRIDGE-PFMG474 Firmware Changelog
         images to build/ (as in WHAM-XREX-PFMG474) with a fallback for older commits.
         Historical entries below predate the rename and are kept verbatim.
 
+2026-09-29  —  Phase 2: in-application firmware update, boot diagnostics, !BOOT banner
+-----------------------------------------------------------------------
+  Change:  Ported from WHAM-XREX-PFMG474 (see AGENTS.md "Current functionality" and
+        docs/command_reference.md): FWUPdate:* dual-bank update over the serial link,
+        .noinit boot record + three-line !BOOT banner, DIAGnostic:OPTBytes?/RSTCause?/
+        RSTCause:CLEar, git commit as the 4th *IDN? field. New interfaces flash_bank.h,
+        boot_diag.h; mcu.h extended. Until the Phase 3 state machine exists the update
+        gates on "output stopped" (PFM_GetState() == STOPPED) instead of STATE IDLE.
+        Error codes 12/13/17 keep the XREX numbers (11, 14-16 reserved). Host tools:
+        fw_update.py (single product), net_broker/net_client/net_terminal. SOP Rev C.
+        FW_VERSION_STRING v0.7. Compared with the Phase 1 image: 323 functions identical,
+        9 changed (the hooked callers, command table, *IDN?, main).
+
+  Verification on the WHAM-XREX simulator board (same PCB), all over the ethernet
+        bridge after one ST-Link flash of the first Phase 2 image:
+        - load + verify into bank 2 without swapping; then SWAP -> banner
+          "BANK=2 BFB2=1", diag "prev: stage=9 ... rst=OBL,PIN," (as designed)
+        - full update from bank 2 (erasing/rewriting physical bank 1) and swap: banner
+          0.14 s after the swap ack, [ok] running v0.7 008dc35d from bank 1
+        - ROLLback back to bank 2: banner 0.14 s after the ack
+        - error paths: DATA/END/SWAP with no transfer -> ERR 13; bad BEGin args -> ERR 12
+        - gate: FIRE of a 1300-step table, then FWUPdate:BEGin 0.11 s later -> ERR 13
+          "firmware update needs the output stopped"; after the shot BEGin is accepted
+        - DIAGnostic:OPTBytes? OPTR=BBEFF8AA (bank 1) / BBFFF8AA (bank 2, only BFB2
+          differs); RSTCause? after the banner cleared the flags: all 0
+        Board left running v0.7 008dc35d from bank 2 (BFB2=1), the same image verified
+        in bank 1, so ROLLback works.
+
+  Observed, not a firmware fault: during a long table upload the board reset once
+        with "rst=PIN," and "prev: stage=8" (i.e. it was running normally in the main
+        loop). The NRST pull-up was off and the ST-Link's NRST wire disconnected at the
+        time, so NRST was floating -- exactly the condition hard-won invariant 4
+        describes. The reset also cleared the uploaded table, so the first gate-test
+        run fired nothing and its FWUPdate:BEGin (8-byte probe) was accepted and erased
+        one page of the inactive bank; that bank was rewritten and re-verified with
+        fw_update.py --no-swap. Refit the NRST pull-up before relying on this board.
+
 2026-09-29  —  Phase 1: restructured onto the layered src/ layout (behavior-preserving)
 -----------------------------------------------------------------------
   Change:  Ported the source layout, host tests and build tooling from
