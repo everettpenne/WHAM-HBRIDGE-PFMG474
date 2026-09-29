@@ -57,8 +57,28 @@ WHAM-HBRIDGE-PFMG474 Firmware Changelog
         identical. All 66 data objects match; the only vector-table difference is
         Reset_Handler's address. The one string difference is "ERR 1 Unknown command"
         (now built by SendErr from "Unknown command"; same bytes on the wire).
-        NOT yet done on hardware: the new image has not been flashed. The SOP still
-        describes Debug/ paths and needs a rewrite for build/ and wham_build.py.
+        HARDWARE SMOKE TEST (2026-09-29, on the WHAM-XREX simulator board -- same PCB --
+        flashed with the ST-Link, then driven over the network bridge): PASSED.
+        *IDN? "OK WHAM-HBRIDGE-PFMG474 REVA v0.6"; CONFig:CHANnels? 3; TABle?/FAULT?/
+        GDS? (12 x LOW)/QSPI:ID? (EF 40 18)/PFMIN:STATus?/PFM:DIAG? all as expected;
+        unknown commands -> ERR 1; short (TAB?) and long (table?) forms accepted;
+        TABle:STEP before BEGin -> ERR 2, wrong count -> ERR 4, value > 65535 -> ERR 4,
+        per below the carrier limit -> ERR 10, FIRE with an empty table -> ERR 5; a
+        10-step 100 kHz table uploaded (TABle? 10), FIRE twice: PFM:DIAG? "10 1700 10"
+        (10 interrupt calls, max gap 1700 cycles = one 100 kHz period, i.e. the same
+        timing the pre-restructure firmware showed), gap log 1654..1701. Not exercised:
+        the fault-latch path (the simulator's gate-drive inputs are not driven) and
+        PFM_Input capture (no loopback wired). The option bytes were unchanged
+        (0xBBEFF8AA). The SOP still describes Debug/ paths and needs a rewrite for
+        build/ and wham_build.py.
+
+        Incident, for the record: the first ST-Link flash attempt failed midway through
+        the erase (the SWD link dropped) and left bank 1 partly erased. The chip was
+        recoverable; it could not be halted while NRST floated (pull-up lifted, ST-Link
+        NRST wire not driving it). Attaching with the ST-Link's NRST wire DISCONNECTED and
+        openocd "reset_config none" (SWD only, core halted through the debug port) worked
+        at once: erase, program and verify OK, then a soft reset and a normal boot.
+        Bank 2 (the XREX image) was never touched.
 
   Plan (agreed 2026-09-29), porting from WHAM-XREX-PFMG474, each phase verified:
         Phase 1  restructure onto the layered src/ layout (behavior-preserving,
