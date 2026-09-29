@@ -23,13 +23,56 @@ Ported from the sibling PFM-STM32G474 project, per project decision:
 | 5 | Table is empty — `FIRE` has nothing to play back |
 | 6 | Fault latched — either PC10/HRTIM1_FLT6 (native HRTIM hardware fault input) or the GateDriverStatus_01..12 EXTI interrupt (`PE0`-`PE11`) — `FAULT:CLEAR` required before `FIRE` will work again |
 | 7 | QUADSPI command failed or timed out (see `QSPI:ID?`) |
+| 8 | Invalid `PFM_Input` channel (1-6) |
+| 9 | `M` out of range for `PFMIN:CAPTURE` (1-`PFM_INPUT_MAX_PERIODS`) |
+| 10 | `TABLE:STEP` `per` value implies a carrier frequency above `PFM_MAX_CARRIER_FREQ_HZ` |
+| 12 | Invalid command arguments — see the specific command's own usage |
+| 13 | Not allowed in the current state (`FWUPdate:*` while the output is running, no transfer in progress, nothing verified) |
+| 17 | `FWUPdate:*` flash/CRC/image/option-byte failure |
 
 Codes are never renumbered or reused once assigned, matching the
-sibling project's convention.
+sibling project's convention. 11, 14, 15 and 16 are used only by
+WHAM-XREX-PFMG474 (channels, nicknames, external enable) and are reserved
+here so the shared numbers mean the same thing on both projects.
+
+### Unsolicited `!BOOT` banner (every boot)
+
+Added 2026-09-29 (ported from WHAM-XREX-PFMG474). Sent once per boot,
+after all initialization and right before the main loop — the exact
+signal that a reset (including `FWUPdate:SWAP`/`ROLLback`) has completed
+and the command link is live. `!BOOT` never collides with a reply
+(`OK`/`ERR`). Three lines:
+
+```
+!BOOT WHAM-HBRIDGE-PFMG474 v0.7 2c272540 BANK=1 BFB2=0 STATE=IDLE tick=0
+!BOOT diag boot=1 prev: stage=0 fault=0@0 cfsr=00000000 hfsr=00000000 err=0@0 nmi=0@0 eccr=00000000 rst=
+!BOOT Rise and shine, controller's awake and ready to work 🌞
+```
+
+- Line 1: board, firmware version, git commit (`-dirty` if built from an
+  uncommitted tree), the running flash bank, the `BFB2` option bit, the
+  state (`IDLE` at every boot; `FIRING` if a table is playing), and
+  `HAL_GetTick()` at that point.
+- Line 2 (`src/drivers/boot_diag.h`, `.noinit` RAM — survives every reset
+  but not a power cycle): `boot` counts boots that reached `main()`
+  since power-up. Everything after `prev:` describes the PREVIOUS boot:
+  the last stage it reached (`1` main, `2` HAL init, `3` clock, `4`
+  GPIO, `5` HRTIM, `6` USART2, `7` app init, `8` main loop, `9` about to
+  reload option bytes for a swap), and whether it ended in
+  `HardFault_Handler` (`fault=count@stage`, with `CFSR`/`HFSR`),
+  `Error_Handler` (`err=`) or `NMI_Handler` (`nmi=`, with `FLASH->ECCR`
+  — a flash ECC double error raises an NMI). `rst=` lists the reset
+  sources since the previous boot (`OBL` option-byte reload, `PIN`
+  NRST, `BOR` brown-out/power-on, `SFT` software, `IWDG`/`WWDG`,
+  `LPWR`); a normal `FWUPdate:SWAP` reports `OBL,PIN,`.
+- Line 3: a friendly greeting. The emoji is sent as raw UTF-8 bytes.
+
+The first line can arrive with a garbage byte in front of it: the reset
+itself glitches the TX line. `python/fw_update.py` allows for this.
 
 ## Mnemonic syntax (SCPI-style)
 
-Commands are matched by `cmd_parser.c`'s `scpi_match()` against a flat
+Commands are matched by `scpi_parser.c`'s `scpi_match()` against a flat
 table of patterns — see that file's header comment for the full
 specification. Summary:
 
@@ -59,13 +102,28 @@ Board and firmware identification.
 
 ```
 > *IDN?
-< OK WHAM-HBRIDGE-PFMG474 REVA v0.6
+< OK WHAM-HBRIDGE-PFMG474 REVA v0.7 2c272540
+  (or, built from an uncommitted working tree:)
+< OK WHAM-HBRIDGE-PFMG474 REVA v0.7 2c272540-dirty
 ```
 
 Reports, space-separated: `HW_BOARD_NAME`, `HW_BOARD_REV`,
-`FW_VERSION_STRING` — all compile-time constants in `Core/Inc/version.h`.
+`FW_VERSION_STRING` (compile-time constants, `src/config/ctrlr_config.h`),
+then `FW_GIT_COMMIT` (added 2026-09-29, ported from WHAM-XREX-PFMG474) —
+the short git commit hash this exact build was made from, with a `-dirty`
+suffix if the working tree had uncommitted changes, or `unknown` if
+`build/generated/git_version.h` was never generated. This answers "which
+commit is actually running on this board" independently of what you think
+you last flashed. Before 2026-09-29 the reply had only the first three
+fields.
+
 `HW_BOARD_REV` is currently a placeholder (`REVA`); update it to match
 the actual PCB silkscreen revision.
+
+**Build with `python3 python/wham_build.py`** (not a bare `make`) to get
+an accurate `FW_GIT_COMMIT`: it regenerates `build/generated/git_version.h`
+first. `git_version.h` is gitignored, so a fresh checkout has none until
+`wham_build.py` (or `gen_git_version.py`) runs once.
 
 ### `BOOT`
 
@@ -277,6 +335,77 @@ numbering (`01` = `PE0`, `12` = `PE11`). Kept to this project's
 existing single-`OK <value>`-line response convention rather than the
 sibling PFM-STM32G474 project's multi-line/bitmask `GDS?` reply
 shapes.
+
+### `FWUPdate:*` — in-application firmware update (dual-bank)
+
+Added 2026-09-29 (ported from WHAM-XREX-PFMG474, where it was verified on
+both boards). Updates the firmware over this same serial link at 115200
+8N1, so it works through the ethernet serial bridge, which can't carry the
+ROM bootloader's 8E1. Host tool: `python/fw_update.py` (`--status`,
+`--no-swap`, `--rollback`).
+
+The STM32G474 runs in dual-bank mode (`OPTR.DBANK=1`, 2 x 256 KB). The
+running bank is always mapped at `0x08000000` and the other ("inactive")
+bank at `0x08040000`. A new image — the same `.bin` that would be flashed
+at `0x08000000`, no relinking — is written into the inactive bank,
+CRC-checked and sanity-checked, then booted by setting `OPTR.BFB2`: the ROM
+bootloader's dual-bank boot starts that bank with the banks swapped. The
+previous image stays in the other bank; `FWUPdate:ROLLback` boots it again.
+
+Strict stop-and-wait: `uart.c` holds one line at a time, so wait for each
+reply before sending the next line.
+
+| Command | Reply | Notes |
+|---|---|---|
+| `FWUPdate:BEGin <size> <crc32hex>` | `OK ERASED <n> PAGES BANK <b>` | Needs the output stopped (no `FIRE` in progress). `size` = image length padded with `0xFF` to a multiple of 8, at most 262144. CRC = standard CRC-32 (`zlib.crc32`) of the padded image. Erases only the inactive bank, then checks it reads blank |
+| `FWUPdate:DATA <offsethex> <hex>` | `OK` | 8-48 bytes, a multiple of 8, offsets strictly in order from 0 |
+| `FWUPdate:END` | `OK VERIFIED CRC=<crc>` | CRC over the written bank, then checks the initial stack pointer is in SRAM, the reset vector is a Thumb address inside the image, and the image contains this build's NUL-terminated product name (`HW_BOARD_NAME`), so another product's image can't be loaded |
+| `FWUPdate:SWAP` | `OK SWAPPING -- rebooting into bank <b>` | Needs a verified image and the output stopped. Programs `BFB2`, then reloads option bytes (a full reset) |
+| `FWUPdate:ROLLback` | same as `SWAP` | Boots the image already in the other bank, after the same sanity checks (no CRC — there's no reference). Refused mid-transfer |
+| `FWUPdate:ABORt` | `OK` | Forgets a transfer. The inactive bank is left as is |
+| `FWUPdate:STATus?` | `OK BANK=<1\|2> BFB2=<0\|1> DBANK=<0\|1> STATE=<IDLE\|RECEIVING\|VERIFIED> RX=<n>/<size>` | `BANK` = physical bank currently running |
+
+Errors: `ERR 12` bad arguments/offset, `ERR 13` wrong state (output running,
+no transfer, nothing verified), `ERR 17` flash/CRC/image/option-byte
+failure. Nothing before the final swap can affect the running image.
+
+**Before flashing with the ST-Link**, check `FWUPdate:STATus?` shows
+`BANK=1 BFB2=0` (or `fw_update.py --rollback` until it does). With
+`BFB2=1` the board boots physical bank 2, so a normal ST-Link write to
+`0x08000000` would not be the image that runs. **The board needs a firm
+NRST pull-up for the swap's reset to be reliable** — see AGENTS.md,
+hard-won invariant 4.
+
+**Recovery with an ST-Link** if a swapped-to image won't run: clear `BFB2`
+so the board boots physical bank 1 normally, then reflash bank 1. Attach with
+SWD only (leave the ST-Link's NRST wire off) and `reset_config none`.
+
+### `DIAGnostic:OPTBytes?`
+
+Reports the boot-source bits of the live `FLASH->OPTR`:
+
+```
+> DIAGnostic:OPTBytes?
+< OK OPTR=BBEFF8AA nBOOT0=1 nSWBOOT0=0 nBOOT1=1
+```
+
+`nSWBOOT0=1` means boot0 is read from the physical `BOOT0`/`PB8` pin;
+`0` means boot0 is taken entirely from `nBOOT0` and the pin is never
+sampled. `nBOOT0` is the option-byte boot0 value, used only when
+`nSWBOOT0` is `0`; `nBOOT1` combines with the effective boot0 to pick the
+boot target.
+
+### `DIAGnostic:RSTCause?` / `DIAGnostic:RSTCause:CLEar`
+
+`RSTCause?` reports the `RCC->CSR` reset-cause flags:
+
+```
+> DIAGnostic:RSTCause?
+< OK CSR=00000000 BOR=0 PIN=0 SFT=0 IWDG=0 WWDG=0 LPWR=0 OBL=0
+```
+
+`RSTCause:CLEar` zeroes them (`OK`). The boot banner already captures and
+clears these flags at every boot, so this mostly shows resets since then.
 
 ### `QSPI:ID?`
 

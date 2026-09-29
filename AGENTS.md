@@ -66,6 +66,16 @@ machine** -- no ARM precondition, no interlock, no fault gating; `FIRE`
 takes effect immediately whenever sent, per current project decision
 (see `docs/command_reference.md`'s `FIRE` entry).
 
+- **Firmware update, boot diagnostics, `!BOOT` banner** (added
+  2026-09-29, Phase 2 of the port from WHAM-XREX-PFMG474; `flash_bank.c`,
+  `boot_diag.c`, `cmd_fwupdate.c`, `cmd_system.c`): `FWUPdate:*`
+  dual-bank in-application update over the serial link (works through the
+  ethernet bridge), reset-surviving `.noinit` boot record, an unsolicited
+  three-line `!BOOT` banner every boot, `DIAGnostic:OPTBytes?`/`RSTCause?`,
+  and the git commit in `*IDN?`. See `docs/command_reference.md`. Host tool:
+  `python/fw_update.py` (plus `net_broker.py`/`net_client.py`/
+  `net_terminal.py` for the ethernet bridge). Verified on the WHAM-XREX
+  simulator board -- see `docs/changelog.txt`.
 - **Serial command architecture** (`uart.c`, `cmd_parser.c`) -- ported
   from the sibling project, ported *architecture-only* (no command
   handlers came with it). Interrupt-driven single-byte USART2 RX with
@@ -115,6 +125,14 @@ takes effect immediately whenever sent, per current project decision
     (commit hash + dirty flag). Gitignored output; not yet used by any
     firmware source (the `!BOOT` banner and `*IDN?` will report it in a
     later phase).
+  - `fw_update.py` -- network/serial firmware update using the firmware's
+    own `FWUPdate:*` commands (added 2026-09-29): loads `build/` image into
+    the inactive bank, verifies, swaps, checks the new banner; `--rollback`,
+    `--status`, `--no-swap`. Works through the ethernet serial bridge (the
+    ROM bootloader's 8E1 cannot). `net_broker.py` / `net_client.py` /
+    `net_terminal.py` share the bridge's single client slot between people
+    and scripts. The IP addresses and jump host in their headers are
+    placeholders -- fill in your own tunnel.
   - `wham_serial_flash.py` -- one-command serial reflash (`BOOT` +
     `stm32flash`). Ported from the sibling project's
     `pfm_serial_flash.py`, corrected for this project's actual baud and
@@ -594,6 +612,47 @@ for the current standard to match.
    the interrupt never actually reaches the NVIC, and nothing over
    serial ever gets a reply. Easy to lose track of on a CubeMX regen if
    you're not looking in the right `USER CODE` block.
+
+4. **Every board needs a firm pull-up on the `NRST` line (a resistor to
+   +3V3; 5.1 kOhm verified on the WHAM-XREX boards, which use this same
+   PCB) -- a hardware requirement, not a firmware setting.** Found
+   2026-09-29 on WHAM-XREX-PFMG474 after two days of chasing a ghost. The
+   symptom: after `FWUPdate:SWAP`, or after a cold power-on, the board is
+   silent (no `!BOOT` banner, no `*IDN?` reply) until an ST-Link is
+   connected. The cause: the STM32G474 has NO pull-down on NRST, only a
+   weak (~40 kOhm) internal pull-up that the reference manual says is
+   disabled during every internal reset; something else on the board holds
+   the net partway down (measured 1.6 V, between the ~1.0 V low and ~2.3 V
+   high thresholds -- datasheet values from memory, verify), so the chip
+   stays in reset. With the resistor fitted: 30 clean operations (swaps, a
+   full reflash, a 20-swap soak, a true cold start) on one board and 16 of
+   16 swaps on the other. **Before investigating a "silent after
+   swap/power-on" report, check NRST with a meter (healthy is near
+   3.3 V).** It is NOT the source layout, NOT the option bytes
+   `nSWBOOT0`/`IRHEN`, and NOT the update code -- all three were ruled out
+   there; don't re-chase them. Do not hard-tie NRST to 3.3 V (it defeats the
+   chip's internal-reset holder); use a resistor. The source of the
+   pull-down path is still unidentified. Full record: WHAM-XREX-PFMG474's
+   `docs/changelog.txt` (2026-09-28/29 entries) and SOP Section 3.3.
+   **ST-Link:** with the pull-up fitted, attach with SWDIO, SWCLK, GND and
+   3V3 only and leave the ST-Link's NRST wire OFF; use `openocd` with
+   `reset_config none` and halt through the debug port. (2026-09-29, on
+   the simulator board: with the pull-up lifted and the NRST wire not
+   driving, the core could not be halted at all -- "timed out while
+   waiting for target halted" -- and a flash attempt died mid-erase.)
+5. **Know your board's option bytes.** A floating `BOOT0` pin (`PB8`, only
+   a capacitor on some boards) can boot the ROM bootloader instead of the
+   application, which is silent to the serial link. Setting `nSWBOOT0 = 0`
+   makes the chip ignore the pin. Read them with `DIAGnostic:OPTBytes?`;
+   write them only with an ST-Link (`openocd ... stm32l4x option_write 0
+   0x20 <value> <mask>`, masked so only the intended bit changes) after
+   recording the current values. The WHAM-XREX simulator board runs
+   `FLASH_OPTR = 0xBBEFF8AA` (`nSWBOOT0 = 0`, `IRHEN = 0`).
+6. **A firmware update needs the output stopped.** `FWUPdate:BEGin` and
+   `SWAP` refuse (`ERR 13`) while a table is playing. (Phase 3 will make
+   this "needs `STATE IDLE`" once the operating-state machine exists.) A
+   bench board with nothing wired to the gate-drive inputs may latch a
+   fault at boot; `FAULT:CLEAR` handles that.
 
 ## Known gaps / in-flight work (as of 2026-08-31)
 
