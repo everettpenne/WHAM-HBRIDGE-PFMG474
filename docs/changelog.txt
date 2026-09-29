@@ -43,6 +43,25 @@ WHAM-HBRIDGE-PFMG474 Firmware Changelog
         refused while the input is still bad, ARM/FIRE refused with a latched source,
         fault beats shot completion, no nested critical sections). SOP Rev D.
 
+  Verified on the WHAM-XREX simulator board (network update to v0.8, then over the
+        bridge, with a 5000-step / 1.9 s shot so every "while FIRING" check was made
+        after STATE? had just read FIRING):
+        - boot: STATE? IDLE, FAULT? 0; FIRE unarmed -> ERR 13; ARM twice -> ERR 13;
+          FIRE with an empty table -> ERR 5 (stays ARMED); DISARM -> IDLE
+        - while FIRING: TABLE:BEGIN -> ERR 13 (table kept: TABLE? 5000 afterwards),
+          FWUPdate:BEGin -> ERR 13, ARM -> ERR 13, FIRE -> ERR 13; the shot then ran
+          to the end by itself (PFM:DIAG? 5000 periods) and STATE? returned to IDLE
+        - GENERAL:TEST:FAULT from IDLE, ARMED and FIRING -> FAULT GENERAL each time;
+          in FAULT, ARM -> ERR 6, FIRE/FWUPdate -> ERR 13, FAULT? 1; FAULT:CLEAR -> IDLE
+        - fault mid-shot stopped the output at once: PFM:DIAG? 356 periods, unchanged
+          0.5 s later
+        - a full 5000-period shot after recovery
+        Not exercised on hardware: a real PC10 or GateDriverStatus trip (the simulator's
+        gate-drive inputs read healthy; the host test covers both sources), and BOOT's
+        ARMED/FIRING refusal (host-tested only -- an earlier test run sent BOOT after a
+        too-short shot had already ended, so the board correctly entered the ROM
+        bootloader and needed a power cycle; nothing was erased).
+
 2026-09-29  —  Phase 2: in-application firmware update, boot diagnostics, !BOOT banner
 -----------------------------------------------------------------------
   Change:  Ported from WHAM-XREX-PFMG474 (see AGENTS.md "Current functionality" and
