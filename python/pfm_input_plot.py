@@ -67,7 +67,7 @@ try:
 except ImportError:
     sys.exit("error: matplotlib not installed. Run:  pip install matplotlib")
 
-APP_BAUD = 115200  # see AGENTS.md / docs/changelog.txt -- WHAM-SWITCH-PFMG474-only
+APP_BAUD = 115200  # see AGENTS.md / docs/changelog.txt -- WHAM-HBRIDGE-PFMG474-only
 
 # Must match hrtim.h's HRTIM_TIMER_CLK_HZ exactly -- the real,
 # hardware-verified HRTIM kernel clock (see main.c's SystemClock_Config()),

@@ -1,7 +1,7 @@
 /*
  * commands.c
  *
- * Command handler implementations for WHAM-SWITCH-PFMG474.
+ * Command handler implementations for WHAM-HBRIDGE-PFMG474.
  *
  * Still minimal by design -- *IDN and BOOT, on top of the ported
  * serial command architecture (uart.c + cmd_parser.c's tokenize/

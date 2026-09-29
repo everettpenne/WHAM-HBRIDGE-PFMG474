@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-memory_report.py -- flash/RAM footprint snapshot for WHAM-SWITCH-PFMG474.
+memory_report.py -- flash/RAM footprint snapshot for WHAM-HBRIDGE-PFMG474.
 
-Reads a built .elf (default: Debug/WHAM-SWITCH-PFMG474.elf) with
+Reads a built .elf (default: Debug/WHAM-HBRIDGE-PFMG474.elf) with
 arm-none-eabi-size and arm-none-eabi-nm, and reports:
   - total FLASH used / total (512 KiB, STM32G474QETX_FLASH.ld) and
     RAM used / total (128 KiB)
@@ -14,7 +14,7 @@ Two subcommands:
              given by --elf (or found via --commit, see below).
   history    Append one row to docs/memory_history.csv for the CURRENT
              git commit (HEAD) using --elf, or backfill history for
-             every past commit that has a Debug/WHAM-SWITCH-PFMG474.elf
+             every past commit that has a Debug/WHAM-HBRIDGE-PFMG474.elf
              checked in (--backfill) by extracting each commit's own
              tracked elf with `git show` -- no rebuilding needed, since
              this project tracks Debug/ build output in git.
@@ -54,7 +54,7 @@ from collections import defaultdict
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_ELF = REPO_ROOT / "Debug" / "WHAM-SWITCH-PFMG474.elf"
+DEFAULT_ELF = REPO_ROOT / "Debug" / "WHAM-HBRIDGE-PFMG474.elf"
 HISTORY_CSV = REPO_ROOT / "docs" / "memory_history.csv"
 
 # STM32G474QETX_FLASH.ld MEMORY block -- kept as plain constants here
@@ -257,7 +257,7 @@ def print_snapshot_human(snap):
 
 # --------------------------------------------------------------------------
 # git plumbing -- current commit, and pulling a past commit's own
-# tracked Debug/WHAM-SWITCH-PFMG474.elf without touching the working tree.
+# tracked Debug/WHAM-HBRIDGE-PFMG474.elf without touching the working tree.
 # --------------------------------------------------------------------------
 def git(*args):
     return subprocess.run(
@@ -276,7 +276,7 @@ def commit_subject(rev):
 def extract_elf_at(rev, dest_dir):
     dest = Path(dest_dir) / f"{rev}.elf"
     data = subprocess.run(
-        ["git", "show", f"{rev}:Debug/WHAM-SWITCH-PFMG474.elf"],
+        ["git", "show", f"{rev}:Debug/WHAM-HBRIDGE-PFMG474.elf"],
         cwd=REPO_ROOT, capture_output=True, check=True,
     ).stdout
     dest.write_bytes(data)
@@ -284,7 +284,7 @@ def extract_elf_at(rev, dest_dir):
 
 
 def commits_with_tracked_elf():
-    out = git("log", "--format=%H", "--", "Debug/WHAM-SWITCH-PFMG474.elf")
+    out = git("log", "--format=%H", "--", "Debug/WHAM-HBRIDGE-PFMG474.elf")
     return [line for line in out.splitlines() if line]
 
 
@@ -356,7 +356,7 @@ def append_history_for_current(elf_path):
 def backfill_history():
     revs = commits_with_tracked_elf()
     if not revs:
-        sys.exit("error: no commit in history tracks Debug/WHAM-SWITCH-PFMG474.elf")
+        sys.exit("error: no commit in history tracks Debug/WHAM-HBRIDGE-PFMG474.elf")
 
     rows = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -474,7 +474,7 @@ def main():
     sp_hist.add_argument("--elf", default=str(DEFAULT_ELF))
     sp_hist.add_argument("--backfill", action="store_true",
                           help="rebuild history from every commit with a "
-                               "tracked Debug/WHAM-SWITCH-PFMG474.elf, instead "
+                               "tracked Debug/WHAM-HBRIDGE-PFMG474.elf, instead "
                                "of appending one row for HEAD")
 
     sub.add_parser("report", help="render docs/memory_report.html from "

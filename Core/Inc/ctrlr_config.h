@@ -26,7 +26,7 @@
  * every hardware respin so *IDN's report always matches what's
  * physically in hand.
  * -------------------------------------------------------------------------- */
-#define HW_BOARD_NAME     "WHAM-SWITCH-PFMG474"
+#define HW_BOARD_NAME     "WHAM-HBRIDGE-PFMG474"
 #define HW_BOARD_REV      "REVA"
 
 /* Firmware identity. Bump on every release the way the sibling

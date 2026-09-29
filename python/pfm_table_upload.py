@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 pfm_table_upload.py -- build a PFM table on the host and upload it to
-WHAM-SWITCH-PFMG474 over the TABle:BEGin / TABle:STEP / TABle:END serial
+WHAM-HBRIDGE-PFMG474 over the TABle:BEGin / TABle:STEP / TABle:END serial
 commands (see docs/command_reference.md).
 
 Table CONSTRUCTION deliberately lives entirely in this script, not in
@@ -127,7 +127,7 @@ PROFILE = 10
 # --- Fixed parameters, shared by all five profiles --------------------------
 
 APP_BAUD = 115200  # raised from 9600 on 2026-09-04 -- see AGENTS.md and
-                    # docs/changelog.txt. WHAM-SWITCH-PFMG474-only; the
+                    # docs/changelog.txt. WHAM-HBRIDGE-PFMG474-only; the
                     # sibling PFM-STM32G474 project still uses 9600.
 
 # Must match Core/Inc/ctrlr_config.h's HRTIM_NUM_CHANNELS exactly for
@@ -403,7 +403,7 @@ def send_and_expect_ok(ser, line, timeout=2.0):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Upload a PFM table to WHAM-SWITCH-PFMG474")
+    ap = argparse.ArgumentParser(description="Upload a PFM table to WHAM-HBRIDGE-PFMG474")
     ap.add_argument("--port", required=True, help="serial device, e.g. /dev/cu.usbserial-XXXXX")
     ap.add_argument("--baud", type=int, default=APP_BAUD, help=f"default: {APP_BAUD}")
     args = ap.parse_args()

@@ -1,50 +1,51 @@
-# AGENTS.md — WHAM-SWITCH-PFMG474 Firmware
+# AGENTS.md — WHAM-HBRIDGE-PFMG474 Firmware
 
 Orientation file for any AI agent or LLM working in this repository.
 Read this before touching code.
 
 ## What this project is
 
-Firmware for the **switching-supply application** of this PFM/HRTIM
-controller family: phase-locked, table-driven multi-channel PWM
-generation for a switching power supply, on the STM32G474QET6
-(Cortex-M4F, 170 MHz, LQFP128). This is NOT a new architecture or a new
-board -- it's the exact same firmware previously developed as
-`WHAM-PFMG474-V4`, relocated to its own explicitly-named repo. See
-"Provenance" below for why, and for the unchanged rest of this file:
-everything past this section describes what this firmware already does,
-none of it is new as of the rename.
+Firmware for the **H-bridge power supplies** of the WHAM PFM/HRTIM
+controller family, on the STM32G474QET6 (Cortex-M4F, 170 MHz, LQFP128):
+the **Limiter** (driven by PWM) and the **HVPS** (driven by PFM). Both
+are 3-channel outputs -- Phase U+UN, Phase V+VN, Phase W+WN, complements
+with dead time inserted by the HRTIM -- and both read back 12 gate-drive
+signals as fault inputs. The firmware generates phase-locked,
+table-driven multi-channel PWM/PFM on the HRTIM and takes commands over
+a serial (SCPI-style) link.
 
-**Provenance**: this repo was reseeded (2026-09-09) from
+**Naming and history**: this repo started as `WHAM-PFMG474-V4` (the
+rewrite of the older PFM-STM32G474 firmware for the respun PCB), was
+copied on 2026-09-09 as `WHAM-SWITCH-PFMG474` ("switching-supply
+application"), and was renamed `WHAM-HBRIDGE-PFMG474` on 2026-09-29
+because that name says what the hardware is. It is the direct
+continuation of that firmware (`FW_VERSION_STRING` was not reset). The
+sibling `WHAM-XREX-PFMG474` (closed-loop PID controller for the Transrex
+magnet supplies, same PCB) was forked from it first and has since grown
+platform features -- layered source layout, in-application firmware
+update, boot diagnostics, an operating-state machine, saved settings
+profiles, telemetry -- that are being ported back here in phases (the
+plan and its status: `docs/changelog.txt`). Everything below the
+"Current functionality" heading describes this firmware as it was at the
+rename; the sections are updated as each phase lands.
+
+**Provenance**: reseeded (2026-09-09) from
 [`WHAM-PFMG474-V4`](https://github.com/everettpenne/WHAM-PFMG474-V4) at
 its commit `de83324`, as a genuinely **independent git repository, not a
 GitHub fork** -- no shared git history, matching this project's own
-established convention for sibling projects (below). The reason for the
-rename: this codebase now has a sibling doing a *different* application
-on the same hardware --
-[`WHAM-XREX-PFMG474`](https://github.com/everettpenne/WHAM-XREX-PFMG474),
-a closed-loop PID controller for the Transrex magnet supplies, also
-reseeded from the same `de83324` commit -- and the two needed names that
-say what each one actually does ("Switching supplies" vs. "Transrex
-supplies") rather than one carrying the legacy "V4" name implicitly and
-the other not. Unlike that sibling, nothing about this repo's actual
-firmware changed at the fork point -- board/firmware identity strings
-were renamed (`.project`/`.cproject`/`.ioc`/`.launch` project name,
-`HW_BOARD_NAME`, the Debug/ build artifact name) and re-verified with a
-clean rebuild, but `FW_VERSION_STRING` was deliberately left at `v0.6`
-(unlike WHAM-XREX-PFMG474's reset to `v0.1`) -- this is a continuation
-of the same firmware's version history, not a fresh start.
-**WHAM-PFMG474-V4 itself was not modified to create this repo** -- it
-continues to exist, unchanged, as the original/legacy name for this
-same codebase; whether it stays around as an archival copy or gets
-retired is an open question for you to decide, not assumed here.
+established convention for sibling projects. **WHAM-PFMG474-V4 itself
+was not modified to create this repo**; it continues to exist,
+unchanged, as the original name for the same codebase (whether it stays
+as an archive is the maintainer's call). Historical entries in
+`docs/changelog.txt` predate the renames and are kept verbatim -- they
+are still this codebase's own history.
 
 **Sibling projects**: `../../PFM-STM32G474` (referred to below as "V3")
 and `../../PFM-STM32G474-V4` ("V4") are separate git repositories for
 the earlier hardware revision(s) this codebase's own architecture was
 originally ported from -- further along and much larger in scope (PWM
 generation, closed-loop feedback, fault handling, a GUI).
-`WHAM-XREX-PFMG474` (above) is a further sibling, reseeded from this
+`WHAM-XREX-PFMG474` is a further sibling, reseeded from this
 project's own `de83324` for a different application on the same board.
 None of these share git history with each other or with this repo. Code
 ported over is called out explicitly below and in each file's own

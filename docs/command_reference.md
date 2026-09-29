@@ -1,6 +1,6 @@
-# WHAM-SWITCH-PFMG474 — Serial Command Reference
+# WHAM-HBRIDGE-PFMG474 — Serial Command Reference
 
-USART2, **115200 8N1** (raised from 9600 on 2026-09-04 — see `docs/changelog.txt`; WHAM-SWITCH-PFMG474-only, the sibling PFM-STM32G474 project still uses 9600). Commands are terminated by `\r`, `\n`, or `\r\n`.
+USART2, **115200 8N1** (raised from 9600 on 2026-09-04 — see `docs/changelog.txt`; WHAM-HBRIDGE-PFMG474-only, the sibling PFM-STM32G474 project still uses 9600). Commands are terminated by `\r`, `\n`, or `\r\n`.
 
 ## Response conventions
 
@@ -59,7 +59,7 @@ Board and firmware identification.
 
 ```
 > *IDN?
-< OK WHAM-SWITCH-PFMG474 REVA v0.6
+< OK WHAM-HBRIDGE-PFMG474 REVA v0.6
 ```
 
 Reports, space-separated: `HW_BOARD_NAME`, `HW_BOARD_REV`,

@@ -1,5 +1,37 @@
-WHAM-SWITCH-PFMG474 Firmware Changelog
-=======================================
+WHAM-HBRIDGE-PFMG474 Firmware Changelog
+========================================
+
+2026-09-29  —  Renamed WHAM-SWITCH-PFMG474 -> WHAM-HBRIDGE-PFMG474; port plan started
+-----------------------------------------------------------------------
+  Change:  The firmware drives the Limiter (PWM) and HVPS (PFM) H-bridge supplies
+        (3 channels U/V/W with complements and dead time, 12 gate-drive fault
+        inputs), so "switching supply" was too vague and the repo is renamed to say
+        what the hardware is. Pure rename, no functional change: project name in
+        .project/.cproject/.ioc/.launch, HW_BOARD_NAME ("*IDN?" now reports
+        WHAM-HBRIDGE-PFMG474), the Debug/ artifact names, python/ tool defaults, the
+        SOP file names, README and AGENTS.md. FW_VERSION_STRING stays v0.6. The
+        project folder was renamed with it (the Debug makefile embeds the absolute
+        project path). Clean rebuild: no warnings; the image is 4 bytes larger than
+        the old-name build (the longer name string), nothing else differs.
+        docs/memory_history.csv / docs/memory_report.html still carry the old name
+        in their history; python/memory_report.py's backfill looks for the NEW
+        artifact name, so it only sees commits from this one on until Phase 1 moves
+        images to build/ (as in WHAM-XREX-PFMG474) with a fallback for older commits.
+        Historical entries below predate the rename and are kept verbatim.
+
+  Plan (agreed 2026-09-29), porting from WHAM-XREX-PFMG474, each phase verified:
+        Phase 1  restructure onto the layered src/ layout (behavior-preserving,
+                 proven by comparing images), host tests, build tooling
+        Phase 2  in-application dual-bank firmware update + boot diagnostics; the
+                 NRST pull-up / BOOT0 / option-byte hardware notes
+        Phase 3  operating-state machine (IDLE/ARMED/FIRING/FAULT); every fault
+                 source is one fault type; latched, FAULT:CLEAR re-checks the pins
+        Phase 4  saved-profile architecture (QSPI flash, *SAV/*RCL/preview) with no
+                 application-specific field table yet
+        Phase 5  telemetry architecture (!EVT stream, flight recorder, SYS:TIME?)
+                 with no application-specific events yet
+        Not ported: the PID loop, Transrex ENA_OUT/CONTACT_OUT, per-channel OCP
+        derate, the simulator.
 
 2026-09-09  —  Renamed/relocated from WHAM-PFMG474-V4 (no functional
                change)

@@ -291,7 +291,7 @@ static void MX_USART2_UART_Init(void)
      9600 on 2026-09-04 after a real-hardware experiment (9600 -> clean
      at 115200 -> garbled/mismatched at 921600, see docs/changelog.txt)
      specifically to speed up TABLE:STEP uploads (~20s -> ~3.3s for a
-     500-entry table). This is a deliberate WHAM-SWITCH-PFMG474-only
+     500-entry table). This is a deliberate WHAM-HBRIDGE-PFMG474-only
      divergence from the sibling PFM-STM32G474 project, which still
      uses 9600 -- do not "fix" this to match V3 without checking
      docs/changelog.txt first. python/wham_serial_flash.py and

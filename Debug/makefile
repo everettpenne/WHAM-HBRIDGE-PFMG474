@@ -34,34 +34,34 @@ $(wildcard ../makefile.init) \
 $(wildcard ../makefile.targets) \
 
 
-BUILD_ARTIFACT_NAME := WHAM-SWITCH-PFMG474
+BUILD_ARTIFACT_NAME := WHAM-HBRIDGE-PFMG474
 BUILD_ARTIFACT_EXTENSION := elf
 BUILD_ARTIFACT_PREFIX :=
 BUILD_ARTIFACT := $(BUILD_ARTIFACT_PREFIX)$(BUILD_ARTIFACT_NAME)$(if $(BUILD_ARTIFACT_EXTENSION),.$(BUILD_ARTIFACT_EXTENSION),)
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXECUTABLES += \
-WHAM-SWITCH-PFMG474.elf \
+WHAM-HBRIDGE-PFMG474.elf \
 
 MAP_FILES += \
-WHAM-SWITCH-PFMG474.map \
+WHAM-HBRIDGE-PFMG474.map \
 
 SIZE_OUTPUT += \
 default.size.stdout \
 
 OBJDUMP_LIST += \
-WHAM-SWITCH-PFMG474.list \
+WHAM-HBRIDGE-PFMG474.list \
 
 
 # All Target
 all: main-build
 
 # Main-build Target
-main-build: WHAM-SWITCH-PFMG474.elf secondary-outputs
+main-build: WHAM-HBRIDGE-PFMG474.elf secondary-outputs
 
 # Tool invocations
-WHAM-SWITCH-PFMG474.elf WHAM-SWITCH-PFMG474.map: $(OBJS) $(USER_OBJS) /Users/everettpenne/STM32CubeIDE/workspace_hvps/WHAM-SWITCH-PFMG474/STM32G474QETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "WHAM-SWITCH-PFMG474.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"/Users/everettpenne/STM32CubeIDE/workspace_hvps/WHAM-SWITCH-PFMG474/STM32G474QETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="WHAM-SWITCH-PFMG474.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+WHAM-HBRIDGE-PFMG474.elf WHAM-HBRIDGE-PFMG474.map: $(OBJS) $(USER_OBJS) /Users/everettpenne/STM32CubeIDE/workspace_hvps/WHAM-HBRIDGE-PFMG474/STM32G474QETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "WHAM-HBRIDGE-PFMG474.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"/Users/everettpenne/STM32CubeIDE/workspace_hvps/WHAM-HBRIDGE-PFMG474/STM32G474QETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="WHAM-HBRIDGE-PFMG474.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -70,14 +70,14 @@ default.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
-WHAM-SWITCH-PFMG474.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "WHAM-SWITCH-PFMG474.list"
+WHAM-HBRIDGE-PFMG474.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "WHAM-HBRIDGE-PFMG474.list"
 	@echo 'Finished building: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) WHAM-SWITCH-PFMG474.elf WHAM-SWITCH-PFMG474.list WHAM-SWITCH-PFMG474.map default.size.stdout
+	-$(RM) WHAM-HBRIDGE-PFMG474.elf WHAM-HBRIDGE-PFMG474.list WHAM-HBRIDGE-PFMG474.map default.size.stdout
 	-@echo ' '
 
 secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)

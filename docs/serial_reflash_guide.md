@@ -1,11 +1,11 @@
-# WHAM-SWITCH-PFMG474 — Serial Reflash Guide
+# WHAM-HBRIDGE-PFMG474 — Serial Reflash Guide
 
 How to re-flash the controller over its USART2 serial link using the
 open-source `stm32flash`, with **no** STM32CubeIDE, ST-Link, or physical
 BOOT0/NRST access involved in the flashing step itself. Ported from the
 sibling PFM-STM32G474 project's guide, adjusted for this project's baud
 (115200, raised from 9600 on 2026-09-04 — see `docs/changelog.txt`) and
-build artifact name (`WHAM-SWITCH-PFMG474.bin`), and with a real bugfix
+build artifact name (`WHAM-HBRIDGE-PFMG474.bin`), and with a real bugfix
 history specific to this project (see "The Go-jump bug" below).
 
 **Verified working end-to-end on real hardware** (2026-08-31): flash a
@@ -43,25 +43,25 @@ risk the wrong one. Pass `--port` explicitly. Prefer the `cu.*` node.)
 That will:
 1. Send `BOOT` at 115200 8N1; the app replies `OK ENTERING BOOTLOADER` and
    resets into the ROM bootloader.
-2. Run `stm32flash` to write + verify `Debug/WHAM-SWITCH-PFMG474.bin`.
+2. Run `stm32flash` to write + verify `Debug/WHAM-HBRIDGE-PFMG474.bin`.
 3. Issue a Go so the new firmware starts immediately (no reset pin
    needed) — see the bugfix note below for why this is now reliable.
 
 Useful options:
 
 ```bash
-python3 python/wham_serial_flash.py --bin firmware/WHAM-SWITCH-PFMG474.bin --port ...
+python3 python/wham_serial_flash.py --bin firmware/WHAM-HBRIDGE-PFMG474.bin --port ...
 python3 python/wham_serial_flash.py --no-boot --port ...   # board already in bootloader (BOOT0)
 python3 python/wham_serial_flash.py --no-run --port ...    # leave it in the bootloader after flashing
 ```
 
-By default it flashes `Debug/WHAM-SWITCH-PFMG474.bin`. **This project's
+By default it flashes `Debug/WHAM-HBRIDGE-PFMG474.bin`. **This project's
 `.cproject` does not have the "Convert to binary file" post-build step
 enabled**, so that `.bin` doesn't appear automatically from a normal
 build — generate it by hand after building:
 
 ```bash
-arm-none-eabi-objcopy -O binary Debug/WHAM-SWITCH-PFMG474.elf Debug/WHAM-SWITCH-PFMG474.bin
+arm-none-eabi-objcopy -O binary Debug/WHAM-HBRIDGE-PFMG474.elf Debug/WHAM-HBRIDGE-PFMG474.bin
 ```
 
 ## 3. The `BOOT` command (mechanism)
@@ -133,7 +133,7 @@ Send `BOOT` (via the script's step above, `scpi.py`, or any terminal),
 wait ~1.5 s, then:
 
 ```bash
-stm32flash -w Debug/WHAM-SWITCH-PFMG474.bin -v -g 0x08000000 /dev/cu.usbserial-XXXXX
+stm32flash -w Debug/WHAM-HBRIDGE-PFMG474.bin -v -g 0x08000000 /dev/cu.usbserial-XXXXX
 ```
 
 - `-w` write, `-v` verify, `-g 0x08000000` start the app afterward.

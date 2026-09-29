@@ -12,7 +12,7 @@ extern "C" {
 #include "pfm_input.h"
 
 /* --------------------------------------------------------------------------
- * Command handler implementations for WHAM-SWITCH-PFMG474.
+ * Command handler implementations for WHAM-HBRIDGE-PFMG474.
  *
  * Response conventions (ported from the sibling PFM-STM32G474 project,
  * per project decision):
