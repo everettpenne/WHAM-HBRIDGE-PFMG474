@@ -31,7 +31,7 @@ Prerequisites:
 
 Typical use (from anywhere -- paths below default relative to this
 script's own location, in python/, not the current directory):
-  python3 python/wham_serial_flash.py                 # auto-detect port, flash Debug/WHAM-HBRIDGE-PFMG474.bin
+  python3 python/wham_serial_flash.py                 # auto-detect port, flash build/WHAM-HBRIDGE-PFMG474.bin
   python3 python/wham_serial_flash.py --bin firmware/WHAM-HBRIDGE-PFMG474.bin
   python3 python/wham_serial_flash.py --port /dev/cu.usbserial-130
   python3 python/wham_serial_flash.py --no-boot        # board already in bootloader (BOOT0)
@@ -57,7 +57,7 @@ PROJECT_DIR = os.path.dirname(SCRIPT_DIR)  # this script lives in python/
 
 # Where CubeIDE drops the build artifact. Point --bin elsewhere (e.g. a local
 # 'firmware/' folder you copy releases into) if you prefer.
-DEFAULT_BIN = os.path.join(PROJECT_DIR, "Debug", "WHAM-HBRIDGE-PFMG474.bin")
+DEFAULT_BIN = os.path.join(PROJECT_DIR, "build", "WHAM-HBRIDGE-PFMG474.bin")
 
 FLASH_BASE_ADDR = "0x08000000"   # application origin (matches the linker script)
 APP_BAUD_DEFAULT = 115200        # firmware command protocol: 115200 8N1

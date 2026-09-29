@@ -25,4 +25,10 @@ SUBDIRS := \
 Core/Src \
 Core/Startup \
 Drivers/STM32G4xx_HAL_Driver/Src \
+src/app \
+src/app/commands \
+src/app/control \
+src/app/protection \
+src/bsp/stm32g4 \
+src/middleware/scpi \
 

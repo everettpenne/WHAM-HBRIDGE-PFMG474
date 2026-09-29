@@ -103,6 +103,18 @@ takes effect immediately whenever sent, per current project decision
      debugging history (this was chased down empirically, on real
      hardware, over several flash/reset cycles).
 - **Host-side tooling** (`python/`):
+  - `wham_build.py` -- **the canonical way to build this project**
+    (added 2026-09-29, ported from WHAM-XREX-PFMG474): git-version
+    header, build-list and layout checks, unit tests, `make`, the `.bin`
+    regeneration, and publishing to `build/` -- see "Build & verify".
+  - `sync_build_sources.py` -- regenerates `Debug/`'s makefile lists and
+    `.cproject`'s include paths/source folders from the source tree.
+    Run it after adding, moving or renaming any source file or folder.
+  - `check_layout.py` -- enforces "Source layout"; run by `wham_build.py`.
+  - `gen_git_version.py` -- regenerates `build/generated/git_version.h`
+    (commit hash + dirty flag). Gitignored output; not yet used by any
+    firmware source (the `!BOOT` banner and `*IDN?` will report it in a
+    later phase).
   - `wham_serial_flash.py` -- one-command serial reflash (`BOOT` +
     `stm32flash`). Ported from the sibling project's
     `pfm_serial_flash.py`, corrected for this project's actual baud and
@@ -386,56 +398,149 @@ takes effect immediately whenever sent, per current project decision
   history (DSLogic captures, exact failure signatures, dead ends) in
   `docs/changelog.txt`'s 2026-09-09 entries.
 
+## Source layout (standing rule -- keep it this way)
+
+Adopted 2026-09-29 (ported from WHAM-XREX-PFMG474, where it was
+established 2026-09-26 at the user's direction) as a **long-term
+instruction for anyone, human or agent, working in this repo: every
+change must keep this structure.** `python/check_layout.py` enforces the
+mechanical parts and runs in every `python/wham_build.py` build, so a
+violation fails the build just like a compile error.
+
+```
+Core/               CubeMX-generated ONLY: Src/main.c, stm32g4xx_it.c,
+                    stm32g4xx_hal_msp.c, system_stm32g4xx.c, syscalls.c,
+                    sysmem.c; Inc/main.h, stm32g4xx_hal_conf.h,
+                    stm32g4xx_it.h; Startup/. The composition root: main()
+                    and the IRQ handlers wire the layers together.
+Drivers/            ST HAL + CMSIS (vendor code, untouched)
+src/
+  config/           ctrlr_config.h -- compile-time configuration; any layer
+  drivers/          hardware-independent interfaces, headers only:
+                    uart.h, board_io.h, mcu.h, hrtim.h, pfm_input.h,
+                    qspi_test.h, boot_jump.h
+  bsp/stm32g4/      the only code that touches the MCU (HAL, registers,
+                    interrupts): implements drivers/; *_hw.h = BSP-private
+  middleware/scpi/  scpi_parser.c -- protocol logic, no hardware, no
+                    product knowledge
+  app/              the product: app.c (start-up, main loop), task_*.c
+                    (main-loop tasks, tasks.h)
+    control/        pfm (the table playback engine)
+    protection/     gate_driver (fault evaluation)
+    commands/       command_table.c, commands.h, cmd_common.c/.h,
+                    cmd_<subsystem>.c
+tests/              off-target unit tests, run on the PC (make -C tests)
+build/              wham_build.py output: WHAM-HBRIDGE-PFMG474.{elf,bin}
+                    (tracked), .map, generated/ (git_version.h) and tests/
+                    (ignored)
+Debug/              CubeIDE's build folder; makefiles kept in step with the
+                    tree by python/sync_build_sources.py
+docs/, python/      documentation, host tools
+```
+
+Rules:
+
+1. **Dependencies point one way.** app -> middleware -> drivers <- bsp;
+   config (and build/generated) from anywhere. `src/app`,
+   `src/middleware` and `src/drivers` never include `main.h`, `stm32*.h`
+   or a BSP header, and never use HAL calls or types, register access,
+   GPIO port/pin names, IRQ numbers or interrupt intrinsics. Need
+   hardware from app code? Add to (or create) a `src/drivers` interface
+   and implement it in `src/bsp/stm32g4`.
+2. **The BSP never includes app or middleware headers.** When a hardware
+   event must reach the application (an interrupt), `Core/`'s handler
+   calls the app function, or the app registers a callback.
+3. **`Core/` stays generated.** Hand-written code there is limited to
+   one-line calls inside USER CODE blocks; no new files in `Core/`.
+   (Invariants 2 and 3 below are the two deliberate exceptions to
+   "one-line": the bootloader jump first in `main()` and USART2's NVIC
+   setup.)
+4. **A module is a `.c` and its `.h` side by side** in the same folder.
+   BSP-private declarations (HAL handles, HAL-valued settings) go in a
+   `<module>_hw.h` next to it. Header names are unique project-wide --
+   includes are by bare name.
+5. **Commands:** the handler goes in the matching
+   `src/app/commands/cmd_<subsystem>.c` (file map in `commands.h`), is
+   declared in `commands.h`, and gets a row in `command_table.c`; errors
+   use `SendErr()` with a `cmd_err_t` code (`cmd_common.h`). A new
+   subsystem gets a new `cmd_<subsystem>.c` and a line in the map.
+6. **Main-loop work is a task:** `TaskX_Poll()` in `src/app/task_x.c`,
+   declared in `tasks.h`, called from `App_Poll()`. Tasks never block.
+7. **Hardware-independent logic gets a host test** in `tests/`
+   (`make -C tests`, also run by `wham_build.py`). `test_command_table`
+   checks every command pattern is reachable by its short and long form
+   -- a new command that collides with an existing one fails the build.
+8. **After adding, moving or renaming a source file or folder**, run
+   `python3 python/sync_build_sources.py` (updates `Debug/`'s makefiles
+   and `.cproject` for the IDE); `wham_build.py` refuses to build while
+   they are stale.
+9. **Images come from `wham_build.py` and live in `build/`**; the
+   flashing and update tools read them from there.
+10. **If a rule genuinely doesn't fit, change it deliberately**: this
+    section and `check_layout.py` together, with a changelog entry.
+    Don't work around the checker.
+
+Known limits, left as they are: interface names still carry this chip's
+vocabulary (`HRTIM1_*`, `PfmInput_*`, the `uart2` instance).
+
 ## Tech stack & layout
 
 - C11, STM32Cube HAL (G4), bare metal -- no RTOS, no heap.
 - Built with STM32CubeIDE's generated makefile; toolchain
   arm-none-eabi-gcc 13.3.
-- `Core/Src|Inc/` -- all project code. Currently: `main.c`, `uart.c`,
-  `cmd_parser.c`, `commands.c`, `boot_jump.c`, `hrtim.c`, `pfm.c`,
-  `gate_driver.c`, `qspi_test.c`, `pfm_input.c`, plus CubeMX-generated
-  `stm32g4xx_hal_msp.c`/`stm32g4xx_it.c`/`system_stm32g4xx.c`/
-  `syscalls.c`/`sysmem.c`.
+- Where everything lives: "Source layout" above. `main.c` is
+  CubeMX-generated init plus one call per USER CODE block; start-up and
+  the main loop are `src/app/app.c`. Serial commands:
+  `src/middleware/scpi/scpi_parser.c` (matching),
+  `src/app/commands/command_table.c` (the table), `commands.h` (every
+  handler, plus which file holds which subsystem), `cmd_common.c/.h`
+  (`cmd_err_t`, `SendErr()`, shared preconditions), one
+  `cmd_<subsystem>.c` per subsystem (split out of the old single
+  `commands.c`, 2026-09-29; older changelog entries still say
+  `commands.c`, `cmd_parser.c` or `Core/Src/...`).
 - `python/` -- host-side tooling (see above).
+- `tests/` -- off-target unit tests (see "Source layout").
 - `docs/` -- this documentation set.
 
 ## Build & verify
 
-```bash
-cd Debug && make all -j4
-```
-
-then, since this project's `.cproject` does **not** have the "Convert to
-binary file (.bin)" post-build step enabled (confirmed; unlike the
-sibling project, which does), generate the `.bin` by hand:
+**Canonical way to build, as of 2026-09-29:**
 
 ```bash
-arm-none-eabi-objcopy -O binary Debug/WHAM-PFMG474-V4.elf Debug/WHAM-PFMG474-V4.bin
+python3 python/wham_build.py
 ```
 
-**Adding a new source file from outside CubeIDE (e.g. this agent
-writing a `.c`/`.h` pair directly)**: CubeIDE's managed build
-auto-discovers new files in a source directory the *first* time you
-build a fresh project (no `Debug/` yet) -- but once `Debug/` exists,
-its generated per-directory `subdir.mk` and the top-level
-`Debug/objects.list` are **not** automatically refreshed by a plain
-`make`. Every file added this way in this project (`Core/Src`:
-`boot_jump.c`, `cmd_parser.c`, `commands.c`, `uart.c`, `gate_driver.c`,
-`qspi_test.c`, `pfm_input.c`; `Drivers/STM32G4xx_HAL_Driver/Src`:
-`stm32g4xx_hal_qspi.c`, `stm32g4xx_hal_tim.c`, `stm32g4xx_hal_tim_ex.c`
--- all copied in from an external HAL package rather than hand-written,
-but the exact same gotcha applies) needed its
-directory's own `subdir.mk` plus `Debug/objects.list` hand-patched to
-add the new `.c`/`.o`/`.d` entries before `make` would pick it up. In
-CubeIDE itself, `F5` (Refresh) + a normal Build regenerates these
-correctly, no hand-patching needed -- the manual patching is only
-necessary when
-building from the command line without going through the IDE first.
+It runs, in order: (1) `python/gen_git_version.py`, regenerating
+`build/generated/git_version.h`; (2) `python/sync_build_sources.py
+--check` -- fails if `Debug/`'s makefiles or `.cproject` no longer match
+the source tree; (3) `python/check_layout.py` -- the "Source layout"
+rules; (4) `make -C tests` -- the off-target unit tests
+(`--skip-tests` to skip); (5) `make -j4 all` in `Debug/`; (6)
+`arm-none-eabi-objcopy -O binary` to regenerate the `.bin` -- this
+project's `.cproject` does **not** have CubeIDE's "Convert to binary file
+(.bin)" post-build step enabled, so a bare `make` alone never touches the
+`.bin`, and flashing a stale one "succeeds" while silently not containing
+your latest changes; (7) publish the `.elf`/`.bin`/`.map` to
+`build/WHAM-HBRIDGE-PFMG474.*` -- where the flashing tools read them, and
+what git tracks (`Debug/`'s own copies are ignored).
 
-- No on-host test suite. Verification so far = clean build (zero
-  warnings) + real hardware round trips over the serial link (see
-  `docs/changelog.txt` for what's actually been confirmed on hardware
-  vs. only compiled/linked).
+**Adding, moving or renaming a source file or folder from outside
+CubeIDE (e.g. an agent writing a `.c`/`.h` pair directly)**: run
+`python3 python/sync_build_sources.py`. CubeIDE's managed build does not
+refresh its generated per-directory `Debug/**/subdir.mk`,
+`Debug/sources.mk`, `Debug/makefile` or `Debug/objects.list` on a plain
+`make`; the script regenerates all of them, plus `.cproject`'s include
+paths and source folders, from the tree (`--check` only reports). In
+CubeIDE itself, `F5` (Refresh) + a normal Build also regenerates them.
+Files added under `Drivers/` (vendor HAL sources) still need the
+hand-patch. `Debug/objects.list` is not tracked in git, so a fresh clone
+must build once from the IDE or run the script before a command-line
+`make` links.
+
+- Verification = clean build (zero warnings) + the off-target unit tests
+  (SCPI matching, command-table reachability) + real hardware round trips
+  over the serial link (see `docs/changelog.txt` for what's actually been
+  confirmed on hardware vs. only compiled/linked).
 - Serial console: **115200 8N1** (raised from 9600 on 2026-09-04, see
   "Hard-won invariants" below and `docs/changelog.txt`), SCPI-style
   mnemonics (case-insensitive, short/long form), `OK ...` /

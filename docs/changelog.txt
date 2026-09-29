@@ -19,6 +19,47 @@ WHAM-HBRIDGE-PFMG474 Firmware Changelog
         images to build/ (as in WHAM-XREX-PFMG474) with a fallback for older commits.
         Historical entries below predate the rename and are kept verbatim.
 
+2026-09-29  —  Phase 1: restructured onto the layered src/ layout (behavior-preserving)
+-----------------------------------------------------------------------
+  Change:  Ported the source layout, host tests and build tooling from
+        WHAM-XREX-PFMG474 (AGENTS.md "Source layout" now applies here). Core/ is
+        CubeMX-generated code only; hand-written code moved to src/{config,drivers,
+        bsp/stm32g4,middleware/scpi,app}. HAL types and handles moved behind *_hw.h
+        headers (uart_hw.h, hrtim_hw.h, pfm_input_hw.h); new HAL-free interfaces
+        mcu.h (cycle counter, SysTick priority) and board_io.h (the 12
+        GateDriverStatus inputs: pin/EXTI setup moved verbatim out of MX_GPIO_Init()
+        into BoardIo_Init(), plus the raw read). cmd_parser.c became the generic
+        scpi_parser.c (middleware) plus command_table.c; commands.c was split into
+        cmd_system/table/config/state/io/pfmin.c with SendErr() and the error codes
+        (cmd_err_t, values 1-10 unchanged) in cmd_common.*. main.c is generated code
+        plus uart_bind()/App_Init()/App_Poll(); start-up and the main loop are
+        src/app/app.c, and the SCPI poll is a task (task_scpi.c). No command,
+        reply, error code, or hardware sequence changed.
+        Tooling: python/wham_build.py (single target), sync_build_sources.py,
+        check_layout.py, gen_git_version.py, tests/ (SCPI matching 36 checks,
+        command-table reachability 37 checks); images are published to build/ and the
+        Debug/ build byproducts (.o/.d/.list/.map/objects.list) are no longer tracked
+        (Debug/ makefiles stay tracked). memory_report.py replaced by XREX's version
+        (reads build/, falls back to Debug/ and the old-name artifact for history).
+
+  Verification: the pre-restructure image (built from the rename commit) was
+        compared with the new one function by function (normalized disassembly),
+        the data objects, the vector table and the string set. 314 of 323 functions
+        are byte-identical; the 9 that differ are exactly the expected ones:
+        removed FixSysTickPriority / dispatch_command / uart_init / uart_process,
+        new App_Init/App_Poll/BoardIo_*/Mcu_*/Commands_Dispatch/TaskScpi_Poll/
+        scpi_dispatch/uart_bind/uart_start/uart_take_line, and 5 changed callers
+        (GateDriver_Read now calls BoardIo_ReadGateDriverStatus, whose body is the
+        old inline read instruction for instruction; MX_GPIO_Init calls BoardIo_Init
+        -- the HAL call sequence is identical; PFM_Init/PFM_CycleBoundaryHandler call
+        Mcu_CycleCounterStart/Mcu_CycleCount instead of touching the DWT inline --
+        one extra call in the diagnostic path; main). main()'s call order is
+        identical. All 66 data objects match; the only vector-table difference is
+        Reset_Handler's address. The one string difference is "ERR 1 Unknown command"
+        (now built by SendErr from "Unknown command"; same bytes on the wire).
+        NOT yet done on hardware: the new image has not been flashed. The SOP still
+        describes Debug/ paths and needs a rewrite for build/ and wham_build.py.
+
   Plan (agreed 2026-09-29), porting from WHAM-XREX-PFMG474, each phase verified:
         Phase 1  restructure onto the layered src/ layout (behavior-preserving,
                  proven by comparing images), host tests, build tooling

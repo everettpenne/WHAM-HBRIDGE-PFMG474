@@ -21,14 +21,12 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "uart.h"
-#include "cmd_parser.h"
+#include "app.h"
 #include "boot_jump.h"
-#include "hrtim.h"
-#include "pfm.h"
-#include "gate_driver.h"
-#include "qspi_test.h"
-#include "pfm_input.h"
+#include "board_io.h"
+#include "hrtim_hw.h"
+#include "mcu.h"
+#include "uart_hw.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,7 +57,6 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_HRTIM1_Init(void);
 /* USER CODE BEGIN PFP */
-static void FixSysTickPriority(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -97,13 +94,13 @@ int main(void)
   /* Must run immediately after HAL_Init() -- HAL_InitTick() (called
      inside HAL_Init()) sets SysTick to its default TICK_INT_PRIORITY
      (15, the lowest possible), which this overrides. See
-     FixSysTickPriority()'s own doc comment (below) for the full
+     Mcu_SetSysTickHighestPriority()'s own doc comment (mcu.c) for the full
      priority-inversion window this closes -- placed here, as early as
      possible, so nothing between here and HRTIM1_EnableMasterInterrupt()
      (which sets HRTIM1_Master_IRQn's priority, later in USER CODE 2)
      can be exposed to it, however briefly. Ported from the sibling
      PFM-STM32G474 project's main.c, same placement. */
-  FixSysTickPriority();
+  Mcu_SetSysTickHighestPriority();
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -118,51 +115,8 @@ int main(void)
   MX_HRTIM1_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  /* Brings the PFM table module to a known-empty, known-stopped state
-     before anything else can touch it (a TABLE:* command over UART, or
-     a FIRE). Does not start HRTIM outputs -- see PFM_Init()'s own
-     comment in pfm.c. */
-  PFM_Init();
-
-  /* One explicit GateDriver_CheckFault() call, here at boot, before
-     relying on the EXTI interrupt (gate_driver.c, wired up in
-     main.c's MX_GPIO_Init()) for everything from here on. EXTI is
-     edge-triggered: a pin that is ALREADY in its fault state (per
-     GDS_FAULT_POLARITY, ctrlr_config.h) at the moment PE0..PE11 get
-     configured for interrupt mode produces no edge of its own -- the
-     ISR would simply never fire for it, silently, until something
-     eventually toggles that pin. Confirmed relevant on this exact
-     board: a GDS? snapshot taken earlier the same day this was added
-     showed GateDriverStatus_03 (PE2) already HIGH, which is a fault
-     under this build's NORMALLY_LOW polarity. This call catches
-     exactly that case -- any fault already present at boot -- instead
-     of depending on a future transition that might never come. */
-  GateDriver_CheckFault();
-
-  /* QUADSPI bring-up (PE12-PE15/PB10-PB11, W25Q128JVS) -- see
-     qspi_test.h for scope. No-op when QSPI_TEST_FEATURE_ENABLED is 0,
-     matching the same always-call/resolves-to-something-or-nothing
-     pattern already used for BootJump_CheckAndEnter(). */
-  QspiTest_Init();
-
-  /* PFM_Input period/duty capture (PA15/PD4/PB2/PC12/PB4/PD12, TIM2/
-     TIM3/TIM4/TIM5) -- see pfm_input.h. Configures the timers/GPIO
-     only; does not arm or start any capture (that's PfmInput_Arm()
-     via PFMIN:CAPTURE, and PfmInput_OnShotStart(), called from
-     PFM_Restart() in pfm.c). No-op when PFM_INPUT_FEATURE_ENABLED is
-     0. */
-  PfmInput_Init();
-
-  uart_init(&uart2, &huart2);
-
-  /* The HRTIM master-repetition interrupt must be enabled now, at
-     boot, even though outputs are not yet running: PFM_CycleBoundaryHandler()
-     needs to be wired up and ready before the first FIRE, not armed
-     reactively at fire time. The ISR itself is a no-op with respect to
-     actual switching until HRTIM1_PWM_Start() has been called (by
-     cmd_fire() -> PFM_Restart()). Ported from the sibling
-     PFM-STM32G474 project's main.c, same placement/rationale. */
-  HRTIM1_EnableMasterInterrupt();
+  uart_bind(&uart2, &huart2);
+  App_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -172,8 +126,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    /* Polls for a completed serial command line and dispatches it. */
-    uart_process(&uart2);
+    App_Poll();
   }
   /* USER CODE END 3 */
 }
@@ -368,102 +321,12 @@ static void MX_GPIO_Init(void)
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
-  /* GateDriverStatus_01..12 (PE0..PE11, docs/pin_mapping_v4.csv) --
-     interrupt-capable digital inputs, no pull. Originally added
-     2026-09-08 as plain GPIO_MODE_INPUT alongside the GDS? diagnostic
-     command (commands.c); upgraded the same day to
-     GPIO_MODE_IT_RISING_FALLING to back a real fault interrupt
-     (gate_driver.c's GateDriver_CheckFault()) -- GDS? still works
-     identically either way, a plain IDR read. These pins were never
-     configured at all before the first of those two changes, so a
-     floating/undriven pin would have read an arbitrary level. Pull
-     matches the sibling PFM-STM32G474 project's gpio.c config for
-     these same 12 pins (GPIO_NOPULL -- gate-driver-IC status outputs,
-     actively driven, no internal pull needed).
-
-     Both edges (not just the one GDS_FAULT_POLARITY, ctrlr_config.h,
-     currently cares about) so a fault is caught regardless of which
-     direction a pin moves -- the actual fault/healthy determination
-     happens in GateDriver_CheckFault(), against that compile-time
-     setting, not by picking rising-only or falling-only here; that
-     keeps this config correct even if GDS_FAULT_POLARITY is ever
-     flipped without also revisiting this block.
-
-     __HAL_RCC_SYSCFG_CLK_ENABLE() is required before HAL_GPIO_Init()
-     can actually route these pins' EXTI lines (SYSCFG->EXTICR) -- easy
-     to omit and get a config that silently never fires. */
-  {
-      GPIO_InitTypeDef gdsInit = {0};
-
-      __HAL_RCC_GPIOE_CLK_ENABLE();
-      __HAL_RCC_SYSCFG_CLK_ENABLE();
-
-      gdsInit.Pin   = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2  | GPIO_PIN_3  |
-                       GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6  | GPIO_PIN_7  |
-                       GPIO_PIN_8 | GPIO_PIN_9 | GPIO_PIN_10 | GPIO_PIN_11;
-      gdsInit.Mode  = GPIO_MODE_IT_RISING_FALLING;
-      gdsInit.Pull  = GPIO_NOPULL;
-      HAL_GPIO_Init(GPIOE, &gdsInit);
-
-      /* EXTI0..EXTI4 are individual NVIC vectors; EXTI5..9 share
-         EXTI9_5_IRQn; EXTI10..15 share EXTI15_10_IRQn -- PE0..PE11
-         spans all three groups, 7 vectors total (see stm32g4xx_it.c).
-         Priority tied with HRTIM1_Master_IRQn (1,0) -- both are
-         output-safety-critical paths, and since neither ISR runs long
-         (a register read/compare, occasionally a HRTIM1_PWM_Stop()
-         call), a bounded, occasional deferral between the two at equal
-         priority is an acceptable tradeoff, not a real latency risk.
-         Below USART2 (2,0) -- fault detection preempts serial I/O, not
-         the other way around. Safe to configure NVIC priority/enable
-         here: this runs after FixSysTickPriority() (main(), USER CODE
-         Init) and after HAL_Init()'s own NVIC setup, the same ordering
-         constraint HRTIM1_EnableMasterInterrupt() documents for
-         itself. */
-      HAL_NVIC_SetPriority(EXTI0_IRQn, 1U, 0U);
-      HAL_NVIC_EnableIRQ(EXTI0_IRQn);
-      HAL_NVIC_SetPriority(EXTI1_IRQn, 1U, 0U);
-      HAL_NVIC_EnableIRQ(EXTI1_IRQn);
-      HAL_NVIC_SetPriority(EXTI2_IRQn, 1U, 0U);
-      HAL_NVIC_EnableIRQ(EXTI2_IRQn);
-      HAL_NVIC_SetPriority(EXTI3_IRQn, 1U, 0U);
-      HAL_NVIC_EnableIRQ(EXTI3_IRQn);
-      HAL_NVIC_SetPriority(EXTI4_IRQn, 1U, 0U);
-      HAL_NVIC_EnableIRQ(EXTI4_IRQn);
-      HAL_NVIC_SetPriority(EXTI9_5_IRQn, 1U, 0U);
-      HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
-      HAL_NVIC_SetPriority(EXTI15_10_IRQn, 1U, 0U);
-      HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
-  }
+  BoardIo_Init();
 
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
-/**
-  * @brief  Raises SysTick's NVIC priority off HAL's default lowest
-  *         value, before anything else can run at an intermediate
-  *         priority.
-  *
-  * Ported verbatim from the sibling PFM-STM32G474 project's main.c.
-  * HAL_InitTick() (called from HAL_Init(), which must run before this)
-  * leaves SysTick_IRQn at TICK_INT_PRIORITY (15, the lowest possible
-  * priority on this Cortex-M4's 4-bit-preempt NVIC grouping). This
-  * project's interrupt priority scheme needs SysTick to be the
-  * *highest*-priority interrupt instead, at 0 -- ahead of both
-  * HRTIM1_Master_IRQn (1, see HRTIM1_EnableMasterInterrupt() in
-  * hrtim.c) and USART2_IRQn (2, see MX_USART2_UART_Init() above) --
-  * so that HAL_Delay()/HAL_GetTick() (both driven by SysTick, and used
-  * by ordinary HAL driver calls such as HAL_UART_Init() during
-  * startup) can never be starved by either of those interrupts firing
-  * back-to-back. Left at the HAL default, a sufficiently busy
-  * HRTIM1_Master_IRQn or USART2_IRQn could indefinitely delay a
-  * HAL_Delay()-based timeout inside some future HAL call, which would
-  * look like an unexplained hang rather than a priority bug.
-  */
-static void FixSysTickPriority(void)
-{
-    HAL_NVIC_SetPriority(SysTick_IRQn, 0U, 0U);
-}
 /* USER CODE END 4 */
 
 /**

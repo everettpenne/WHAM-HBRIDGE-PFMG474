@@ -1,0 +1,26 @@
+/*
+ * cmd_common.c -- shared pieces of the serial command layer, see
+ * cmd_common.h.
+ */
+#include "cmd_common.h"
+#include "hrtim.h"
+#include "gate_driver.h"
+#include <stdio.h>
+
+void SendErr(uart_instance_t *inst, int code, const char *msg)
+{
+    char buf[128];
+    snprintf(buf, sizeof(buf), "ERR %d %s\r\n", code, msg);
+    uart_send(inst, buf);
+}
+
+/* True if EITHER fault source is latched: PC10/HRTIM1_FLT6 (native
+   hardware, hrtim.h) or the GateDriverStatus EXTI interrupt
+   (gate_driver.h, PE0..PE11). One combined answer for FAULT?/FIRE's
+   ERR 6 gate/FAULT:CLEAR -- see cmd_fault_query()'s own comment for
+   why these two structurally-independent mechanisms present as one
+   fault state at the command layer. */
+uint8_t AnyFaultLatched(void)
+{
+    return (HRTIM1_FaultIsTripped() != 0U) || (GateDriver_FaultIsLatched() != 0U);
+}

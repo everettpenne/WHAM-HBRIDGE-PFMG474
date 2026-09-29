@@ -22,11 +22,11 @@
 #include "stm32g4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "uart.h"
-#include "hrtim.h"
+#include "uart_hw.h"
+#include "hrtim_hw.h"
 #include "pfm.h"
 #include "gate_driver.h"
-#include "pfm_input.h"
+#include "pfm_input_hw.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -212,7 +212,7 @@ void SysTick_Handler(void)
   * @brief  Rx Transfer completed callback.
   *
   * Called by the HAL after each single-byte interrupt-driven UART
-  * receive armed by uart_init()/uart_rx_callback() in uart.c. Routes
+  * receive armed by uart_start()/uart_rx_callback() in uart.c. Routes
   * to uart_rx_callback(), which accumulates the byte into the line
   * buffer and re-arms the next single-byte receive.
   * @param  huart  Pointer to the UART handle that completed reception.
